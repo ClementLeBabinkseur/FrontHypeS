@@ -32,7 +32,7 @@ impl Config {
             .unwrap_or_else(|_| "your-api-key".to_string());
         
         Ok(Self {
-            hyperevm_ws_rpc: format!("wss://hyperliquid-mainnet.g.alchemy.com/{}", alchemy_key),
+            hyperevm_ws_rpc: format!("wss://hyperliquid-mainnet.g.alchemy.com/v2/{}", alchemy_key),
             hyperliquid_ws_url: "wss://api.hyperliquid.xyz/ws".to_string(),
             
             // Token addresses
@@ -43,12 +43,12 @@ impl Config {
             
             // DEX factories
             projet_x_factory: Address::from_str("0xFf7B3e8C00e57ea31477c32A5B52a58Eea47b072")?,
-            hybra_factory: Address::from_str("0xD883a0B7889475d362CEA8fDf588266a3da554A1")?,
+            hybra_factory: Address::from_str("0x2dC0Ec0F0db8bAF250eCccF268D7dFbF59346E5E")?,
             hyperswap_factory: Address::from_str("0xB1c0fa0B789320044A6F623cFe5eBda9562602E3")?,
             ultrasolid_factory: Address::from_str("0xD883a0B7889475d362CEA8fDf588266a3da554A1")?,
             
             // Filtering
-            min_tvl_usd: 300_000.0,
+            min_tvl_usd: 100_000.0,
             min_profit_threshold_percent: 3.0,
             min_profit_threshold_usd: 3.0,
         })

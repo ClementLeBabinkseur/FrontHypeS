@@ -6,12 +6,16 @@ pub struct PoolInfo {
     pub address: Address,
     pub token0: Address,
     pub token1: Address,
-    pub fee_tier: u32, // Fee in basis points (500 = 0.05%, 3000 = 0.3%, 10000 = 1%)
+    pub fee_tier: u32,
     pub current_tick: i32,
     pub sqrt_price_x96: U256,
     pub liquidity: u128,
     pub tvl_usd: f64,
     pub dex_name: String,
+
+    // V2-only (remplis si getReserves() marche)
+    pub reserve0: Option<U256>,
+    pub reserve1: Option<U256>,
 }
 
 #[derive(Debug, Clone)]
@@ -70,23 +74,55 @@ impl PoolInfo {
 // Uniswap V3 math helpers
 pub mod v3_math {
     use ethers::types::U256;
-    
-    const Q96: u128 = 1u128 << 96;
-    
+    use num_bigint::BigUint;
+    use num_traits::{ToPrimitive, One};
+
     pub fn sqrt_price_to_price(sqrt_price_x96: U256, decimals0: u8, decimals1: u8) -> f64 {
-        let sqrt_price = sqrt_price_x96.as_u128() as f64;
-        let price = (sqrt_price / Q96 as f64).powi(2);
-        
-        // Adjust for decimals
-        let decimal_adjustment = 10f64.powi((decimals1 as i32) - (decimals0 as i32));
-        price * decimal_adjustment
+        if sqrt_price_x96.is_zero() {
+            return 0.0;
+        }
+
+        // Conversion U256 -> BigUint
+        let mut buf = [0u8; 32];
+        sqrt_price_x96.to_big_endian(&mut buf);
+        let sp = BigUint::from_bytes_be(&buf);
+
+        // Calcul (sqrtP^2) / 2^192 en entier (évite la perte de précision)
+        let num = &sp * &sp;
+        let den: BigUint = BigUint::from(1u8) << 192usize;
+
+        // ✅ Ajout d’un typage explicite pour aider le compilateur
+        let q: BigUint = &num / &den;
+        let r: BigUint = &num % &den;
+
+        // Conversion en f64
+        let q_f = q.to_f64().unwrap_or(f64::INFINITY);
+        let r_f = r.to_f64().unwrap_or(0.0);
+        let den_f = den.to_f64().unwrap_or(f64::INFINITY);
+        let mut price1_per_0 = q_f + (r_f / den_f);
+
+        // Ajustement décimales (quote per base si base=token0)
+        let scale_pow = (decimals0 as i32) - (decimals1 as i32);
+        price1_per_0 *= 10f64.powi(scale_pow);
+
+        price1_per_0
     }
-    
-    pub fn tick_to_price(tick: i32) -> f64 {
-        1.0001f64.powi(tick)
-    }
-    
-    pub fn price_to_tick(price: f64) -> i32 {
-        (price.log(1.0001)) as i32
+}
+
+impl DexPrice {
+    /// Retourne Some(USDT_per_BASE) si le pool contient USDT ; None sinon.
+    pub fn usdt_per_base(&self, usdt: Address) -> Option<f64> {
+        let t0 = self.pool.token0;
+        let t1 = self.pool.token1;
+
+        // Si token1 est USDT, alors token1/token0 = USDT per token0 (BASE = token0)
+        if t1 == usdt {
+            return Some(self.token1_price_in_token0);
+        }
+        // Si token0 est USDT, alors token0/token1 = USDT per token1 (BASE = token1)
+        if t0 == usdt {
+            return Some(self.token0_price_in_token1);
+        }
+        None
     }
 }
