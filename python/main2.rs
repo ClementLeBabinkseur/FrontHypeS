@@ -2,6 +2,9 @@ use ethers::prelude::*;
 use anyhow::Result;
 use std::sync::Arc;
 
+// Adresse pool PRJX : 0xBd19E19E4b70eB7F248695a42208bc1EdBBFb57D
+// USDT / HYPE
+
 // ABI simplifié pour Uniswap V3 Pool
 abigen!(
     IUniswapV3Pool,
