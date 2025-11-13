@@ -1,6 +1,6 @@
 use anyhow::Result;
 use ethers::{
-    providers::{Provider, Ws, StreamExt, Middleware},  // ✅ Ajouter Middleware
+    providers::{Provider, Ws, StreamExt, Middleware},
     types::U256,
 };
 use std::sync::Arc;

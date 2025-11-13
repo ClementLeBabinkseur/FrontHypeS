@@ -1,10 +1,12 @@
 pub mod types;
 pub mod dex;
 pub mod hyperliquid;
+pub mod gas_monitor;
 
 pub use types::*;
 pub use dex::DexPriceFetcher;
 pub use hyperliquid::HyperliquidPriceFetcher;
+pub use gas_monitor::{GasMonitor, GasPrice};
 
 use anyhow::Result;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -28,6 +30,7 @@ fn u256_to_f64(x: U256) -> f64 {
 pub struct PricingEngine {
     pub dex_fetcher: DexPriceFetcher,
     pub hyperliquid_fetcher: HyperliquidPriceFetcher,
+    pub gas_monitor: GasMonitor,
     usdt_address: Address,
 }
 
@@ -36,10 +39,14 @@ impl PricingEngine {
         let usdt_address = config.usdt_address;
         let dex_fetcher = DexPriceFetcher::new(config.clone()).await?;
         let hyperliquid_fetcher = HyperliquidPriceFetcher::new(config.hyperliquid_ws_url.clone());
+        
+        // Créer le gas monitor avec le même provider que dex_fetcher
+        let gas_monitor = GasMonitor::new(dex_fetcher.get_provider());
 
         Ok(Self {
             dex_fetcher,
             hyperliquid_fetcher,
+            gas_monitor,
             usdt_address,
         })
     }
@@ -50,6 +57,9 @@ impl PricingEngine {
 
         // Connect to Hyperliquid
         self.hyperliquid_fetcher.connect_and_subscribe().await?;
+        
+        // Start gas price monitoring
+        self.gas_monitor.start_monitoring().await?;
 
         Ok(())
     }
@@ -128,25 +138,21 @@ impl PricingEngine {
         token0: &ethers::types::Address,
         token1: &ethers::types::Address,
     ) -> (u8, u8) {
-        // TODO: à terme, lire on-chain ERC20::decimals() et cacher
-        // Pour l'instant: USDT=6, uBTC=8, le reste=18
-        let usdt = "0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb".to_lowercase(); // USDT (6)
-        let ubtc = "0x9fdbda0a5e284c32744d2f17ee5c74b284993463".to_lowercase(); // uBTC (8)
+        // ✅ FIX: Comparer les Address directement, pas en string
+        let usdt_addr = self.dex_fetcher.config.usdt_address;
+        let ubtc_addr = self.dex_fetcher.config.ubtc_address;
 
-        let t0 = token0.to_string().to_lowercase();
-        let t1 = token1.to_string().to_lowercase();
-
-        let d0 = if t0 == usdt {
+        let d0 = if token0 == &usdt_addr {
             6
-        } else if !ubtc.is_empty() && t0 == ubtc {
+        } else if token0 == &ubtc_addr {
             8
         } else {
             18
         };
 
-        let d1 = if t1 == usdt {
+        let d1 = if token1 == &usdt_addr {
             6
-        } else if !ubtc.is_empty() && t1 == ubtc {
+        } else if token1 == &ubtc_addr {
             8
         } else {
             18

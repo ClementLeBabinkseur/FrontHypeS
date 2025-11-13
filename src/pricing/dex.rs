@@ -428,6 +428,11 @@ impl DexPriceFetcher {
         }
     }
 
+    /// Récupérer le provider pour le gas monitor
+    pub fn get_provider(&self) -> Arc<Provider<Ws>> {
+        Arc::clone(&self.provider)
+    }
+
     /// Subscribe to pool events via WebSocket (à implémenter)
     pub async fn subscribe_to_pool_updates(&self) -> Result<()> {
         info!("Pool update subscription - TODO");
