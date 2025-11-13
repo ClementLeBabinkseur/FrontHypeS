@@ -144,10 +144,10 @@ impl HyperliquidPriceFetcher {
                 prices_write.insert(data.coin.clone(), price.clone());
                 
                 // Commented out for cleaner logs - prices are visible in snapshots
-                 info!(
-                     "Hyperliquid {} - Bid: {:.2} | Mid: {:.2} | Ask: {:.2}",
-                     data.coin, best_bid, mid_price, best_ask
-                 );
+                // info!(
+                //     "Hyperliquid {} - Bid: {:.2} | Mid: {:.2} | Ask: {:.2}",
+                //     data.coin, best_bid, mid_price, best_ask
+                // );
             }
         }
         
