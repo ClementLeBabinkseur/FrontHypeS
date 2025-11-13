@@ -14,6 +14,19 @@ use super::types::{PoolInfo, PoolState, TickInfo};
 use crate::config::Config;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Helper function pour conversion U256 -> f64
+// ─────────────────────────────────────────────────────────────────────────────
+use num_bigint::BigUint;
+use num_traits::ToPrimitive;
+
+fn u256_to_f64(x: U256) -> f64 {
+    let mut buf = [0u8; 32];
+    x.to_big_endian(&mut buf);
+    let int = BigUint::from_bytes_be(&buf);
+    int.to_f64().unwrap_or(0.0)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ABIs
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -263,9 +276,9 @@ impl DexPriceFetcher {
             (None, None)
         };
 
-        // TVL approximatif
+        // ✅ FIX #2: Calcul de TVL CORRIGÉ (passer sqrt_price_x96)
         let tvl_usd = self
-            .calculate_tvl(pool_address, token0_addr, token1_addr)
+            .calculate_tvl(pool_address, token0_addr, token1_addr, sqrt_price_u256)
             .await?;
 
         // Filtre par TVL
@@ -293,7 +306,14 @@ impl DexPriceFetcher {
         Ok(Some(PoolState { info: pool_info, tick_map }))
     }
 
-    async fn calculate_tvl(&self, pool: Address, token0: Address, token1: Address) -> Result<f64> {
+    // ✅ FIX #2: NOUVELLE VERSION DU CALCUL DE TVL
+    async fn calculate_tvl(
+        &self, 
+        pool: Address, 
+        token0: Address, 
+        token1: Address,
+        sqrt_price_x96: U256,
+    ) -> Result<f64> {
         let token0_contract = IERC20::new(token0, Arc::clone(&self.provider));
         let token1_contract = IERC20::new(token1, Arc::clone(&self.provider));
 
@@ -306,18 +326,47 @@ impl DexPriceFetcher {
         let amount0 = balance0.as_u128() as f64 / 10f64.powi(decimals0 as i32);
         let amount1 = balance1.as_u128() as f64 / 10f64.powi(decimals1 as i32);
 
+        // ✅ Calculer le prix token1/token0 en utilisant sqrtPriceX96
+        // Prix = (sqrtPriceX96 / 2^96)^2 * 10^(decimals0 - decimals1)
+        let price_token1_per_token0 = if sqrt_price_x96 != U256::zero() {
+            let sqrt_f = u256_to_f64(sqrt_price_x96);
+            let ratio = sqrt_f / 2f64.powi(96);
+            let scale_pow = (decimals0 as i32) - (decimals1 as i32); // ✅ Correct: dec0 - dec1
+            (ratio * ratio) * 10f64.powi(scale_pow)
+        } else {
+            // Pool sans prix (inactif ou V2)
+            return Ok(0.0);
+        };
+
         let usdt_addr = self.config.usdt_address.to_string().to_lowercase();
         let token0_str = token0.to_string().to_lowercase();
         let token1_str = token1.to_string().to_lowercase();
 
-        if token0_str == usdt_addr {
-            Ok(amount0 * 2.0)
-        } else if token1_str == usdt_addr {
-            Ok(amount1 * 2.0)
+        // ✅ Convertir les deux côtés en USD selon quel token est USDT
+        let tvl_usd = if token1_str == usdt_addr {
+            // token1 est USDT, token0 est la base (HYPE, uBTC, etc.)
+            // Prix donne: combien de USDT pour 1 token0
+            let value_token0_usd = amount0 * price_token1_per_token0;
+            let value_token1_usd = amount1; // Déjà en USD
+            value_token0_usd + value_token1_usd
+        } else if token0_str == usdt_addr {
+            // token0 est USDT, token1 est la base
+            // Prix donne: combien de USDT pour 1 token0, donc on inverse pour avoir token1 en USD
+            let price_token0_per_token1 = if price_token1_per_token0 != 0.0 {
+                1.0 / price_token1_per_token0
+            } else {
+                0.0
+            };
+            let value_token0_usd = amount0; // Déjà en USD
+            let value_token1_usd = amount1 * price_token0_per_token1;
+            value_token0_usd + value_token1_usd
         } else {
-            // fallback grossier
-            Ok((amount0 + amount1) * 100.0)
-        }
+            // Aucun USDT dans la paire (ne devrait pas arriver avec tracked_pairs)
+            // Fallback grossier
+            (amount0 + amount1) * 100.0
+        };
+
+        Ok(tvl_usd)
     }
 
     async fn load_tick_data(
@@ -359,7 +408,7 @@ impl DexPriceFetcher {
         &self.pools
     }
 
-    fn get_token_symbol(&self, address: &Address) -> &str {
+    pub fn get_token_symbol(&self, address: &Address) -> &str {
         let addr_str = address.to_string().to_lowercase();
         let hype = self.config.hype_address.to_string().to_lowercase();
         let ubtc = self.config.ubtc_address.to_string().to_lowercase();

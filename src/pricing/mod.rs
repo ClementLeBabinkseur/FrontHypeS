@@ -8,7 +8,7 @@ pub use hyperliquid::HyperliquidPriceFetcher;
 
 use anyhow::Result;
 use std::time::{SystemTime, UNIX_EPOCH};
-use ethers::types::U256;
+use ethers::types::{U256, Address};
 
 use num_bigint::BigUint;
 use num_traits::ToPrimitive;
@@ -28,16 +28,19 @@ fn u256_to_f64(x: U256) -> f64 {
 pub struct PricingEngine {
     pub dex_fetcher: DexPriceFetcher,
     pub hyperliquid_fetcher: HyperliquidPriceFetcher,
+    usdt_address: Address,
 }
 
 impl PricingEngine {
     pub async fn new(config: crate::config::Config) -> Result<Self> {
+        let usdt_address = config.usdt_address;
         let dex_fetcher = DexPriceFetcher::new(config.clone()).await?;
         let hyperliquid_fetcher = HyperliquidPriceFetcher::new(config.hyperliquid_ws_url.clone());
 
         Ok(Self {
             dex_fetcher,
             hyperliquid_fetcher,
+            usdt_address,
         })
     }
 
@@ -81,19 +84,18 @@ impl PricingEngine {
     fn calculate_dex_price(&self, pool_info: &PoolInfo) -> Result<DexPrice> {
     use ethers::types::U256;
 
-    // Décimales: USDT=6, uBTC=8, le reste=18 (ta fonction get_token_decimals)
+    // Décimales des tokens
     let (dec0, dec1) = self.get_token_decimals(&pool_info.token0, &pool_info.token1);
 
-    // On veut p10 = token1 / token0 (prix de 1 token0 exprimé en token1)
-    // Uniswap v3: sqrtPriceX96 = floor( sqrt(p10 * 10^(dec0 - dec1)) * 2^96 )
-    // => p10 = (sqrtPriceX96 / 2^96)^2 * 10^(dec1 - dec0)   ⬅️ ATTENTION AU SIGNE
-    let p10: f64 = if pool_info.sqrt_price_x96 != U256::zero() {
+    // ✅ FIX #1 ROBUSTE: Calculer le prix brut token1/token0 depuis sqrtPriceX96
+    // Formule Uniswap V3: price_token1_per_token0 = (sqrtPriceX96 / 2^96)^2 * 10^(dec0 - dec1)
+    let price_token1_per_token0: f64 = if pool_info.sqrt_price_x96 != U256::zero() {
         let sqrt_f = u256_to_f64(pool_info.sqrt_price_x96);
         let ratio = sqrt_f / 2f64.powi(96);
-        let scale_pow = (dec1 as i32) - (dec0 as i32); // ✅ dec1 - dec0
+        let scale_pow = (dec0 as i32) - (dec1 as i32); // ✅ CORRECT: dec0 - dec1
         (ratio * ratio) * 10f64.powi(scale_pow)
     } else if let (Some(r0), Some(r1)) = (pool_info.reserve0, pool_info.reserve1) {
-        // V2 fallback: p10 = (r1/10^dec1) / (r0/10^dec0)
+        // V2 fallback: price = (r1/10^dec1) / (r0/10^dec0)
         let r0_f = u256_to_f64(r0);
         let r1_f = u256_to_f64(r1);
         if r0_f > 0.0 && r1_f > 0.0 {
@@ -107,13 +109,17 @@ impl PricingEngine {
         0.0
     };
 
-    // L’autre sens
-    let p01: f64 = if p10 == 0.0 { 0.0 } else { 1.0 / p10 };
+    // L'inverse
+    let price_token0_per_token1: f64 = if price_token1_per_token0 == 0.0 { 
+        0.0 
+    } else { 
+        1.0 / price_token1_per_token0 
+    };
 
     Ok(DexPrice {
         pool: pool_info.clone(),
-        token1_price_in_token0: p10, // token1 / token0
-        token0_price_in_token1: p01, // token0 / token1
+        token1_price_in_token0: price_token1_per_token0, // Combien de token1 pour 1 token0
+        token0_price_in_token1: price_token0_per_token1, // Combien de token0 pour 1 token1
     })
 }
 
@@ -123,7 +129,7 @@ impl PricingEngine {
         token1: &ethers::types::Address,
     ) -> (u8, u8) {
         // TODO: à terme, lire on-chain ERC20::decimals() et cacher
-        // Pour l’instant: USDT=6, uBTC=8, le reste=18
+        // Pour l'instant: USDT=6, uBTC=8, le reste=18
         let usdt = "0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb".to_lowercase(); // USDT (6)
         let ubtc = "0x9fdbda0a5e284c32744d2f17ee5c74b284993463".to_lowercase(); // uBTC (8)
 
@@ -147,5 +153,31 @@ impl PricingEngine {
         };
 
         (d0, d1)
+    }
+    
+    /// ✅ NOUVEAU: Obtenir le prix en USDT d'un token, peu importe l'ordre de la pool
+    /// Retourne Some((symbol, prix_en_usdt)) si la pool contient USDT, None sinon
+    pub fn get_price_in_usdt(&self, dex_price: &DexPrice) -> Option<(String, f64)> {
+        let usdt = self.usdt_address;
+        let token0 = dex_price.pool.token0;
+        let token1 = dex_price.pool.token1;
+        
+        // Cas 1: token1 est USDT
+        // Alors price_token1_per_token0 donne directement le prix de token0 en USDT
+        if token1 == usdt {
+            let symbol = self.dex_fetcher.get_token_symbol(&token0);
+            return Some((symbol.to_string(), dex_price.token1_price_in_token0));
+        }
+        
+        // Cas 2: token0 est USDT  
+        // Alors price_token0_per_token1 donne directement le prix de token1 en USDT
+        if token0 == usdt {
+            let symbol = self.dex_fetcher.get_token_symbol(&token1);
+            return Some((symbol.to_string(), dex_price.token0_price_in_token1));
+        }
+        
+        // Cas 3: Aucun des deux n'est USDT (ex: HYPE/uBTC)
+        // TODO: Utiliser un prix de référence ou une pool intermédiaire
+        None
     }
 }

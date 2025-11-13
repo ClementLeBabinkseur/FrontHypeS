@@ -91,7 +91,7 @@ pub mod v3_math {
         let num = &sp * &sp;
         let den: BigUint = BigUint::from(1u8) << 192usize;
 
-        // ✅ Ajout d’un typage explicite pour aider le compilateur
+        // ✅ Ajout d'un typage explicite pour aider le compilateur
         let q: BigUint = &num / &den;
         let r: BigUint = &num % &den;
 
@@ -110,19 +110,31 @@ pub mod v3_math {
 }
 
 impl DexPrice {
-    /// Retourne Some(USDT_per_BASE) si le pool contient USDT ; None sinon.
-    pub fn usdt_per_base(&self, usdt: Address) -> Option<f64> {
+    /// Retourne Some((base_token, price_in_usdt)) si le pool contient USDT ; None sinon.
+    /// Cette fonction est robuste et gère les pools dans les deux sens.
+    pub fn get_base_price_in_usdt(&self, usdt_address: Address) -> Option<(Address, f64, &str)> {
         let t0 = self.pool.token0;
         let t1 = self.pool.token1;
-
-        // Si token1 est USDT, alors token1/token0 = USDT per token0 (BASE = token0)
-        if t1 == usdt {
-            return Some(self.token1_price_in_token0);
+        
+        // Cas 1: token1 = USDT, donc token0 = BASE
+        // Prix = token1/token0 = USDT per BASE ✅
+        if t1 == usdt_address {
+            return Some((t0, self.token1_price_in_token0, "token0_is_base"));
         }
-        // Si token0 est USDT, alors token0/token1 = USDT per token1 (BASE = token1)
-        if t0 == usdt {
-            return Some(self.token0_price_in_token1);
+        
+        // Cas 2: token0 = USDT, donc token1 = BASE
+        // Prix = token0/token1 = USDT per BASE ✅
+        if t0 == usdt_address {
+            return Some((t1, self.token0_price_in_token1, "token1_is_base"));
         }
+        
+        // Cas 3: Aucun USDT (ex: HYPE/BTC)
         None
+    }
+    
+    /// Retourne Some(USDT_per_BASE) si le pool contient USDT ; None sinon.
+    /// DEPRECATED: Utiliser get_base_price_in_usdt() à la place pour plus de robustesse
+    pub fn usdt_per_base(&self, usdt: Address) -> Option<f64> {
+        self.get_base_price_in_usdt(usdt).map(|(_, price, _)| price)
     }
 }
