@@ -4,6 +4,7 @@ import math
 from web3 import Web3
 from typing import List, Tuple, Dict, Any
 from dataclasses import dataclass, field
+import time
 
 # ---------- Constantes (adaptables) ----------
 TRADE_AMOUNT_USDT: float = 150000.0  # montant cible en USDT
@@ -270,19 +271,78 @@ def parse_liquidity_upward(
 
 
 class Pool:
-    def __init__(self, pool_address, pool_contract, decimal0, decimal1, w3):
-        self.pool_address = pool_address
-        self.pool_contract = pool_contract
-        self.decimal0 = decimal0
-        self.decimal1=decimal1
-        self.w3=w3
 
-    def data(self):
-        
-        return self.current_tick, self.tick_spacing, self.current_liquidity, self.aligned_tick, self.current_price
+    def __init__(self, pool_address, pool_addr, decimal0, decimal1, w3, symbol0, symbol1):
+        self.pool_address = pool_address
+        self.pool_addr = pool_addr
+        self.decimal0 = decimal0
+        self.decimal1 = decimal1
+        self.symbol0 = symbol0     
+        self.symbol1 = symbol1     
+        self.w3 = w3
+
+
+
+    def print_state(self):
+        """
+        Affiche toutes les données de la pool
+        """
+
+        pool_contract = self.w3.eth.contract(address=self.pool_addr, abi=UNIV3_POOL_ABI)
+
+        try:
+            slot0 = pool_contract.functions.slot0().call()
+            sqrt_price = int(slot0[0])
+            current_tick = int(slot0[1])
+        except Exception as e:
+            print("Erreur slot0():", e)
+            return
+
+        try:
+            tick_spacing = int(pool_contract.functions.tickSpacing().call())
+        except:
+            tick_spacing = 60
+
+        try:
+            liquidity = int(pool_contract.functions.liquidity().call())
+        except:
+            liquidity = 0
+
+        aligned_tick = align_tick_to_spacing(current_tick, tick_spacing)
+        current_price = sqrt_price_x96_to_price(
+            sqrt_price, 
+            self.decimal0, 
+            self.decimal1
+        )
+
+        try:
+            gas_price = self.w3.eth.gas_price
+            gas_price_wei = int(gas_price)
+            gas_price_gwei = gas_price_wei / 1e9
+            gas_price_hype = gas_price_gwei / 1e9
+        except:
+            gas_price_wei = gas_price_gwei = gas_price_hype = 0
+
+        '''print("═══════════════════════════════════════")
+        print(f"📊 État actuel de la pool {self.symbol0}/{self.symbol1}")
+        print("═══════════════════════════════════════")
+        print(f"Tick actuel (brut): {current_tick}")
+        print(f"Tick aligné (spacing={tick_spacing}): {aligned_tick}")'''
+        print(f"Prix actuel: {current_price:.12f} {self.symbol1} per {self.symbol0}")
+        '''print(f"Liquidité totale: {liquidity}")
+        print(f"Tick spacing: {tick_spacing}")
+        print("═══════════════════════════════════════")
+        print("⛽ Gas price:")
+        print(f"   Wei:  {gas_price_wei:.0f}")
+        print(f"   Gwei: {gas_price_gwei:.6f}")
+        print(f"   HYPE: {gas_price_hype:.12f}")
+        print("═══════════════════════════════════════\n")'''
     
-    def repr(self):
-        return f"<Pool {self.address[:8]}... {self.token0}/{self.token1}>"
+    
+    
+    def __repr__(self):
+        return f"<Pool {self.symbol0}/{self.symbol1} {self.pool_address[:8]}>"
+
 
 
 
@@ -291,7 +351,8 @@ def main():
     rpc_url = os.environ.get("RPC_URL", DEFAULT_RPC)
 
     POOLS = [DEFAULT_POOL1,DEFAULT_POOL2]
-    pool_object = []
+    pool_objects = []
+
     for DEFAULT_POOL in POOLS:
         
         pool_address = os.environ.get("POOL_ADDRESS", DEFAULT_POOL)
@@ -344,58 +405,39 @@ def main():
 
         print(f"🪙 Token0: {symbol0} (decimals: {decimal0})")
         print(f"🪙 Token1: {symbol1} (decimals: {decimal1})\n")
-        # ↑↑ CONF
-        # slot0  
-        # ↓↓ Data 
-        try:
-            slot0 = pool_contract.functions.slot0().call()
-            sqrt_price_x96 = int(slot0[0])
-            current_tick = int(slot0[1])
-        except Exception as e:
-            print("Erreur slot0():", e)
-            return
 
-        try:
-            tick_spacing = int(pool_contract.functions.tickSpacing().call())
-        except Exception as e:
-            print("Erreur tickSpacing():", e)
-            tick_spacing = 60  # fallback
+         # ---- création de l'objet Pool ----
+        pool_obj = Pool(
+        pool_address = pool_address,
+        pool_addr = pool_addr,
+        decimal0 = decimal0,
+        decimal1 = decimal1,
+        w3 = w3,
+        symbol0 = symbol0,
+        symbol1 = symbol1
+        )
 
-        try:
-            current_liquidity = int(pool_contract.functions.liquidity().call())
-        except Exception as e:
-            print("Erreur liquidity():", e)
-            current_liquidity = 0
 
-        aligned_tick = align_tick_to_spacing(current_tick, tick_spacing)
-        current_price = sqrt_price_x96_to_price(sqrt_price_x96, decimal0, decimal1)
+        pool_objects.append(pool_obj)
 
-        try:
-            gas_price = w3.eth.gas_price
-            gas_price_wei = int(gas_price)
-            gas_price_gwei = gas_price_wei / 1_000_000_000.0
-            gas_price_hype = gas_price_gwei / 1_000_000_000.0
-        except Exception:
-            gas_price_wei = gas_price_gwei = gas_price_hype = 0.0
+        print(f"✅ Objet Pool créé : {pool_obj}\n")
 
-        print("═══════════════════════════════════════")
-        print(f"📊 État actuel de la pool {symbol0}/{symbol1}")
-        print("═══════════════════════════════════════")
-        print(f"Tick actuel (brut): {current_tick}")
-        print(f"Tick aligné (spacing={tick_spacing}): {aligned_tick}")
-        print(f"Prix actuel: {current_price:.12f} {symbol1} per {symbol0}")
-        print(f"Liquidité totale: {current_liquidity}")
-        print(f"Tick spacing: {tick_spacing}")
-        print("═══════════════════════════════════════")
-        print("⛽ Gas price:")
-        print(f"   Wei:  {gas_price_wei:.0f}")
-        print(f"   Gwei: {gas_price_gwei:.6f}")
-        print(f"   HYPE: {gas_price_hype:.12f}")
-        print("═══════════════════════════════════════\n")
+
+    # ↑↑ CONF
+    # slot0  
+    # ↓↓ Data 
+
+    while 1:
+        for pool in pool_objects:
+
+            print(f"\n🪙    POOL: {pool}")
+            pool.print_state()
+
+        
         
         # A partir de la il montre le trade, les données des pools sont au dessus
 
-        analysis = parse_liquidity_upward(
+        '''analysis = parse_liquidity_upward(
             w3=w3,
             pool_contract=pool_contract,
             current_tick=aligned_tick,
@@ -437,7 +479,7 @@ def main():
             print("\n⚠️  Trade stoppé: slippage max atteint")
         else:
             print("\n⚠️  Trade incomplet")
-        print("═══════════════════════════════════════\n")
+        print("═══════════════════════════════════════\n")'''
 
 
 if __name__ == "__main__":
