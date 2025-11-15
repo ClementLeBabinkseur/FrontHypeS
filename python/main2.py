@@ -12,8 +12,8 @@ MAX_TICKS = 1000
 
 # Par défaut (remplace via env vars si tu veux)
 DEFAULT_RPC = os.environ.get("RPC_URL", "https://rpc.hyperliquid.xyz/evm")
-#DEFAULT_POOL = os.environ.get("POOL_ADDRESS", "0xBd19E19E4b70eB7F248695a42208bc1EdBBFb57D")  # HYPE/USDT
-DEFAULT_POOL = os.environ.get("POOL_ADDRESS", "0x3603ffebb994cc110b4186040cac3005b2cf4465")  # HYPE/USDT Hybra 
+DEFAULT_POOL1 = os.environ.get("POOL_ADDRESS", "0xBd19E19E4b70eB7F248695a42208bc1EdBBFb57D")  # HYPE/USDT Project X
+DEFAULT_POOL2 = os.environ.get("POOL_ADDRESS", "0x3603ffebb994cc110b4186040cac3005b2cf4465")  # HYPE/USDT Hybra 
 # ---------- ABIs (simplifiés — uniquement fonctions utilisées) ----------
 UNIV3_POOL_ABI = [
     {
@@ -268,147 +268,152 @@ def parse_liquidity_upward(
 # ---------- Main ----------
 def main():
     rpc_url = os.environ.get("RPC_URL", DEFAULT_RPC)
-    pool_address = os.environ.get("POOL_ADDRESS", DEFAULT_POOL)
-    w3 = Web3(Web3.HTTPProvider(rpc_url))
 
-    print("🔌 Connexion au RPC...")
-    print("✅ Connected:", w3.is_connected())
-    try:
-        print("Current block:", w3.eth.block_number)
-    except Exception as e:
-        print("Warning cannot fetch block number:", e)
+    POOLS = [DEFAULT_POOL1,DEFAULT_POOL2]
 
-    pool_addr = Web3.to_checksum_address(pool_address)
-    pool_contract = w3.eth.contract(address=pool_addr, abi=UNIV3_POOL_ABI)
+    for DEFAULT_POOL in POOLS:
+        
+        pool_address = os.environ.get("POOL_ADDRESS", DEFAULT_POOL)
+        w3 = Web3(Web3.HTTPProvider(rpc_url))
 
-    print(f"\n📡 Récupération des informations de la pool {pool_addr}...\n")
-    try:
-        token0_addr = pool_contract.functions.token0().call()
-        token1_addr = pool_contract.functions.token1().call()
-        print(f"Token0 address: {token0_addr}")
-        print(f"Token1 address: {token1_addr}")
-    except Exception as e:
-        print("❌ Erreur récupération token0/token1:", e)
-        # Afficher aussi le code du réseau / chain id pour diagnostiquer
+        print("🔌 Connexion au RPC...")
+        print("✅ Connected:", w3.is_connected())
         try:
-            print("Chain ID:", w3.eth.chain_id)
-        except:
-            pass
-        return
+            print("Current block:", w3.eth.block_number)
+        except Exception as e:
+            print("Warning cannot fetch block number:", e)
 
-    token0 = w3.eth.contract(address=Web3.to_checksum_address(token0_addr), abi=ERC20_ABI)
-    token1 = w3.eth.contract(address=Web3.to_checksum_address(token1_addr), abi=ERC20_ABI)
+        pool_addr = Web3.to_checksum_address(pool_address)
+        pool_contract = w3.eth.contract(address=pool_addr, abi=UNIV3_POOL_ABI)
 
-    try:
-        decimal0 = int(token0.functions.decimals().call())
-        decimal1 = int(token1.functions.decimals().call())
-    except Exception as e:
-        print("Erreur récupération decimals (utilisation de 18 par défaut):", e)
-        decimal0 = 18
-        decimal1 = 18
+        print(f"\n📡 Récupération des informations de la pool {pool_addr}...\n")
+        try:
+            token0_addr = pool_contract.functions.token0().call()
+            token1_addr = pool_contract.functions.token1().call()
+            print(f"Token0 address: {token0_addr}")
+            print(f"Token1 address: {token1_addr}")
+        except Exception as e:
+            print("❌ Erreur récupération token0/token1:", e)
+            # Afficher aussi le code du réseau / chain id pour diagnostiquer
+            try:
+                print("Chain ID:", w3.eth.chain_id)
+            except:
+                pass
+            return
 
-    try:
-        symbol0 = token0.functions.symbol().call()
-    except Exception:
-        symbol0 = "TOKEN0"
-    try:
-        symbol1 = token1.functions.symbol().call()
-    except Exception:
-        symbol1 = "TOKEN1"
+        token0 = w3.eth.contract(address=Web3.to_checksum_address(token0_addr), abi=ERC20_ABI)
+        token1 = w3.eth.contract(address=Web3.to_checksum_address(token1_addr), abi=ERC20_ABI)
 
-    print(f"🪙 Token0: {symbol0} (decimals: {decimal0})")
-    print(f"🪙 Token1: {symbol1} (decimals: {decimal1})\n")
+        try:
+            decimal0 = int(token0.functions.decimals().call())
+            decimal1 = int(token1.functions.decimals().call())
+        except Exception as e:
+            print("Erreur récupération decimals (utilisation de 18 par défaut):", e)
+            decimal0 = 18
+            decimal1 = 18
 
-    # slot0
-    try:
-        slot0 = pool_contract.functions.slot0().call()
-        sqrt_price_x96 = int(slot0[0])
-        current_tick = int(slot0[1])
-    except Exception as e:
-        print("Erreur slot0():", e)
-        return
+        try:
+            symbol0 = token0.functions.symbol().call()
+        except Exception:
+            symbol0 = "TOKEN0"
+        try:
+            symbol1 = token1.functions.symbol().call()
+        except Exception:
+            symbol1 = "TOKEN1"
 
-    try:
-        tick_spacing = int(pool_contract.functions.tickSpacing().call())
-    except Exception as e:
-        print("Erreur tickSpacing():", e)
-        tick_spacing = 60  # fallback
+        print(f"🪙 Token0: {symbol0} (decimals: {decimal0})")
+        print(f"🪙 Token1: {symbol1} (decimals: {decimal1})\n")
 
-    try:
-        current_liquidity = int(pool_contract.functions.liquidity().call())
-    except Exception as e:
-        print("Erreur liquidity():", e)
-        current_liquidity = 0
+        # slot0
+        try:
+            slot0 = pool_contract.functions.slot0().call()
+            sqrt_price_x96 = int(slot0[0])
+            current_tick = int(slot0[1])
+        except Exception as e:
+            print("Erreur slot0():", e)
+            return
 
-    aligned_tick = align_tick_to_spacing(current_tick, tick_spacing)
-    current_price = sqrt_price_x96_to_price(sqrt_price_x96, decimal0, decimal1)
+        try:
+            tick_spacing = int(pool_contract.functions.tickSpacing().call())
+        except Exception as e:
+            print("Erreur tickSpacing():", e)
+            tick_spacing = 60  # fallback
 
-    try:
-        gas_price = w3.eth.gas_price
-        gas_price_wei = int(gas_price)
-        gas_price_gwei = gas_price_wei / 1_000_000_000.0
-        gas_price_hype = gas_price_gwei / 1_000_000_000.0
-    except Exception:
-        gas_price_wei = gas_price_gwei = gas_price_hype = 0.0
+        try:
+            current_liquidity = int(pool_contract.functions.liquidity().call())
+        except Exception as e:
+            print("Erreur liquidity():", e)
+            current_liquidity = 0
 
-    print("═══════════════════════════════════════")
-    print(f"📊 État actuel de la pool {symbol0}/{symbol1}")
-    print("═══════════════════════════════════════")
-    print(f"Tick actuel (brut): {current_tick}")
-    print(f"Tick aligné (spacing={tick_spacing}): {aligned_tick}")
-    print(f"Prix actuel: {current_price:.12f} {symbol1} per {symbol0}")
-    print(f"Liquidité totale: {current_liquidity}")
-    print(f"Tick spacing: {tick_spacing}")
-    print("═══════════════════════════════════════")
-    print("⛽ Gas price:")
-    print(f"   Wei:  {gas_price_wei:.0f}")
-    print(f"   Gwei: {gas_price_gwei:.6f}")
-    print(f"   HYPE: {gas_price_hype:.12f}")
-    print("═══════════════════════════════════════\n")
+        aligned_tick = align_tick_to_spacing(current_tick, tick_spacing)
+        current_price = sqrt_price_x96_to_price(sqrt_price_x96, decimal0, decimal1)
 
-    analysis = parse_liquidity_upward(
-        w3=w3,
-        pool_contract=pool_contract,
-        current_tick=aligned_tick,
-        tick_spacing=tick_spacing,
-        decimal0=decimal0,
-        decimal1=decimal1,
-        symbol0=symbol0,
-        symbol1=symbol1,
-        current_liquidity=current_liquidity,
-        current_price=current_price,
-    )
+        try:
+            gas_price = w3.eth.gas_price
+            gas_price_wei = int(gas_price)
+            gas_price_gwei = gas_price_wei / 1_000_000_000.0
+            gas_price_hype = gas_price_gwei / 1_000_000_000.0
+        except Exception:
+            gas_price_wei = gas_price_gwei = gas_price_hype = 0.0
 
-    print("\n═══════════════════════════════════════")
-    print("📈 Résultats de la simulation de trade")
-    print("═══════════════════════════════════════")
-    print(f"Montant cible: ${TRADE_AMOUNT_USDT:.2f} USDT")
-    print(f"Montant tradé: ${analysis.trade_amount_filled:.2f} USDT")
-    completion_pct = (analysis.trade_amount_filled / TRADE_AMOUNT_USDT) * 100.0 if TRADE_AMOUNT_USDT != 0 else 0.0
-    print(f"Complétion du trade: {completion_pct:.2f}%")
+        print("═══════════════════════════════════════")
+        print(f"📊 État actuel de la pool {symbol0}/{symbol1}")
+        print("═══════════════════════════════════════")
+        print(f"Tick actuel (brut): {current_tick}")
+        print(f"Tick aligné (spacing={tick_spacing}): {aligned_tick}")
+        print(f"Prix actuel: {current_price:.12f} {symbol1} per {symbol0}")
+        print(f"Liquidité totale: {current_liquidity}")
+        print(f"Tick spacing: {tick_spacing}")
+        print("═══════════════════════════════════════")
+        print("⛽ Gas price:")
+        print(f"   Wei:  {gas_price_wei:.0f}")
+        print(f"   Gwei: {gas_price_gwei:.6f}")
+        print(f"   HYPE: {gas_price_hype:.12f}")
+        print("═══════════════════════════════════════\n")
 
-    print("\n💰 Résultats du trade:")
-    print(f"   Prix actuel de la pool: {analysis.current_price:.12f}")
-    print(f"   Prix moyen d'exécution: {analysis.average_execution_price:.12f}")
-    print(f"   Slippage du trade: {analysis.trade_slippage * 100.0:.4f}%")
+        analysis = parse_liquidity_upward(
+            w3=w3,
+            pool_contract=pool_contract,
+            current_tick=aligned_tick,
+            tick_spacing=tick_spacing,
+            decimal0=decimal0,
+            decimal1=decimal1,
+            symbol0=symbol0,
+            symbol1=symbol1,
+            current_liquidity=current_liquidity,
+            current_price=current_price,
+        )
 
-    total_hype_bought = sum(t.amount_token0 for t in analysis.ticks_explored)
-    total_usdt_spent = sum(t.amount_token1 for t in analysis.ticks_explored)
+        print("\n═══════════════════════════════════════")
+        print("📈 Résultats de la simulation de trade")
+        print("═══════════════════════════════════════")
+        print(f"Montant cible: ${TRADE_AMOUNT_USDT:.2f} USDT")
+        print(f"Montant tradé: ${analysis.trade_amount_filled:.2f} USDT")
+        completion_pct = (analysis.trade_amount_filled / TRADE_AMOUNT_USDT) * 100.0 if TRADE_AMOUNT_USDT != 0 else 0.0
+        print(f"Complétion du trade: {completion_pct:.2f}%")
 
-    print("\n📊 Détails du trade:")
-    print(f"   {symbol0} acheté: {total_hype_bought:.6f}")
-    print(f"   {symbol1} dépensé: {total_usdt_spent:.2f}")
-    print(f"   Nombre de ticks traversés: {len(analysis.ticks_explored)}")
-    print(f"   Ticks: {analysis.start_tick} → {analysis.end_tick}")
-    print(f"   Prix range: {analysis.start_price:.12f} → {analysis.end_price:.12f}")
+        print("\n💰 Résultats du trade:")
+        print(f"   Prix actuel de la pool: {analysis.current_price:.12f}")
+        print(f"   Prix moyen d'exécution: {analysis.average_execution_price:.12f}")
+        print(f"   Slippage du trade: {analysis.trade_slippage * 100.0:.4f}%")
 
-    if analysis.trade_amount_filled >= TRADE_AMOUNT_USDT:
-        print("\n✅ Trade complété avec succès!")
-    elif abs(analysis.trade_slippage) > SLIPPAGE_MAX:
-        print("\n⚠️  Trade stoppé: slippage max atteint")
-    else:
-        print("\n⚠️  Trade incomplet")
-    print("═══════════════════════════════════════\n")
+        total_hype_bought = sum(t.amount_token0 for t in analysis.ticks_explored)
+        total_usdt_spent = sum(t.amount_token1 for t in analysis.ticks_explored)
+
+        print("\n📊 Détails du trade:")
+        print(f"   {symbol0} acheté: {total_hype_bought:.6f}")
+        print(f"   {symbol1} dépensé: {total_usdt_spent:.2f}")
+        print(f"   Nombre de ticks traversés: {len(analysis.ticks_explored)}")
+        print(f"   Ticks: {analysis.start_tick} → {analysis.end_tick}")
+        print(f"   Prix range: {analysis.start_price:.12f} → {analysis.end_price:.12f}")
+
+        if analysis.trade_amount_filled >= TRADE_AMOUNT_USDT:
+            print("\n✅ Trade complété avec succès!")
+        elif abs(analysis.trade_slippage) > SLIPPAGE_MAX:
+            print("\n⚠️  Trade stoppé: slippage max atteint")
+        else:
+            print("\n⚠️  Trade incomplet")
+        print("═══════════════════════════════════════\n")
 
 
 if __name__ == "__main__":
