@@ -13,7 +13,7 @@ MAX_TICKS = 1000
 # Par défaut (remplace via env vars si tu veux)
 DEFAULT_RPC = os.environ.get("RPC_URL", "https://rpc.hyperliquid.xyz/evm")
 #DEFAULT_POOL = os.environ.get("POOL_ADDRESS", "0xBd19E19E4b70eB7F248695a42208bc1EdBBFb57D")  # HYPE/USDT
-DEFAULT_POOL = os.environ.get("POOL_ADDRESS", "0x3603ffebb994cc110b4186040cac3005b2cf4465")  # HYPE/USDT Hybra
+DEFAULT_POOL = os.environ.get("POOL_ADDRESS", "0x3603ffebb994cc110b4186040cac3005b2cf4465")  # HYPE/USDT Hybra 
 # ---------- ABIs (simplifiés — uniquement fonctions utilisées) ----------
 UNIV3_POOL_ABI = [
     {
