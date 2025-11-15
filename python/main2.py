@@ -309,7 +309,7 @@ class Pool:
             liquidity = 0
 
         aligned_tick = align_tick_to_spacing(current_tick, tick_spacing)
-        current_price = sqrt_price_x96_to_price(
+        self.current_price = sqrt_price_x96_to_price(
             sqrt_price, 
             self.decimal0, 
             self.decimal1
@@ -328,7 +328,7 @@ class Pool:
         print("═══════════════════════════════════════")
         print(f"Tick actuel (brut): {current_tick}")
         print(f"Tick aligné (spacing={tick_spacing}): {aligned_tick}")'''
-        print(f"Prix actuel: {current_price:.12f} {self.symbol1} per {self.symbol0}")
+        print(f"Prix actuel: {self.current_price:.12f} {self.symbol1} per {self.symbol0}")
         '''print(f"Liquidité totale: {liquidity}")
         print(f"Tick spacing: {tick_spacing}")
         print("═══════════════════════════════════════")
@@ -427,28 +427,30 @@ def main():
     # slot0  
     # ↓↓ Data 
 
-    while 1:
-        for pool in pool_objects:
-
-            print(f"\n🪙    POOL: {pool}")
-            pool.print_state()
-
-        
-        
+    for pool in pool_objects:
+        print(f"\n🪙    POOL: {pool}")
+        pool.print_state()
+    spread_brut = (pool_objects[1].current_price - pool_objects[0].current_price)
+    spread_pct = ((pool_objects[1].current_price - pool_objects[0].current_price)/pool_objects[1].current_price)*100
+    print(f"\nSpread brut : {spread_brut}")
+    print(f"Spread en pourcentage : {spread_pct}")
+    
+'''        
         # A partir de la il montre le trade, les données des pools sont au dessus
+    if spread_pct < 0.2:
 
-        '''analysis = parse_liquidity_upward(
-            w3=w3,
-            pool_contract=pool_contract,
-            current_tick=aligned_tick,
-            tick_spacing=tick_spacing,
-            decimal0=decimal0,
-            decimal1=decimal1,
-            symbol0=symbol0,
-            symbol1=symbol1,
-            current_liquidity=current_liquidity,
-            current_price=current_price,
-        )
+        analysis = parse_liquidity_upward(
+                w3=w3,
+                pool_contract=pool_contract,
+                current_tick=aligned_tick,
+                tick_spacing=tick_spacing,
+                decimal0=decimal0,
+                decimal1=decimal1,
+                symbol0=symbol0,
+                symbol1=symbol1,
+                current_liquidity=current_liquidity,
+                current_price=current_price,
+            )
 
         print("\n═══════════════════════════════════════")
         print("📈 Résultats de la simulation de trade")
@@ -462,7 +464,6 @@ def main():
         print(f"   Prix actuel de la pool: {analysis.current_price:.12f}")
         print(f"   Prix moyen d'exécution: {analysis.average_execution_price:.12f}")
         print(f"   Slippage du trade: {analysis.trade_slippage * 100.0:.4f}%")
-
         total_hype_bought = sum(t.amount_token0 for t in analysis.ticks_explored)
         total_usdt_spent = sum(t.amount_token1 for t in analysis.ticks_explored)
 
@@ -479,8 +480,8 @@ def main():
             print("\n⚠️  Trade stoppé: slippage max atteint")
         else:
             print("\n⚠️  Trade incomplet")
-        print("═══════════════════════════════════════\n")'''
-
+        print("═══════════════════════════════════════\n")
+'''
 
 if __name__ == "__main__":
     main()
