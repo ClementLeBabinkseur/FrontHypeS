@@ -29,6 +29,7 @@ pub struct TickInfo {
 pub struct PoolState {
     pub info: PoolInfo,
     pub tick_map: std::collections::BTreeMap<i32, TickInfo>,
+    pub last_updated_block: u64, // 🔥 NOUVEAU - Block number when pool was last updated
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +53,7 @@ pub struct DexPrice {
     pub pool: PoolInfo,
     pub token0_price_in_token1: f64, // How much token1 for 1 token0
     pub token1_price_in_token0: f64, // How much token0 for 1 token1
+    pub last_updated_block: u64, // 🔥 NOUVEAU - Pour déterminer si fresh
 }
 
 impl PoolInfo {

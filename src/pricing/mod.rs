@@ -16,7 +16,7 @@ use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helper module-scope (accessible partout dans ce fichier)
+// Helper module-scope
 // ─────────────────────────────────────────────────────────────────────────────
 fn u256_to_f64(x: U256) -> f64 {
     let mut buf = [0u8; 32];
@@ -40,7 +40,6 @@ impl PricingEngine {
         let dex_fetcher = DexPriceFetcher::new(config.clone()).await?;
         let hyperliquid_fetcher = HyperliquidPriceFetcher::new(config.hyperliquid_ws_url.clone());
         
-        // Créer le gas monitor avec le même provider que dex_fetcher
         let gas_monitor = GasMonitor::new(dex_fetcher.get_provider());
 
         Ok(Self {
@@ -60,6 +59,9 @@ impl PricingEngine {
         
         // Start gas price monitoring
         self.gas_monitor.start_monitoring().await?;
+        
+        // 🔥 NOUVEAU - Subscribe to Swap events
+        self.dex_fetcher.subscribe_to_swap_events().await?;
 
         Ok(())
     }
@@ -69,10 +71,13 @@ impl PricingEngine {
             .duration_since(UNIX_EPOCH)?
             .as_secs();
 
-        // Get DEX prices
+        // 🔥 Get DEX prices avec thread-safe read
         let mut dex_prices = Vec::new();
-        for (_k, pool_state) in self.dex_fetcher.get_pools() {
-            let price = self.calculate_dex_price(&pool_state.info)?;
+        let pools = self.dex_fetcher.get_pools().await;
+        
+        for (_k, pool_state) in pools {
+            let mut price = self.calculate_dex_price(&pool_state.info)?;
+            price.last_updated_block = pool_state.last_updated_block; // 🔥 Ajouter le block number
             dex_prices.push(price);
         }
 
@@ -92,53 +97,48 @@ impl PricingEngine {
     }
 
     fn calculate_dex_price(&self, pool_info: &PoolInfo) -> Result<DexPrice> {
-    use ethers::types::U256;
+        use ethers::types::U256;
 
-    // Décimales des tokens
-    let (dec0, dec1) = self.get_token_decimals(&pool_info.token0, &pool_info.token1);
+        let (dec0, dec1) = self.get_token_decimals(&pool_info.token0, &pool_info.token1);
 
-    // ✅ FIX #1 ROBUSTE: Calculer le prix brut token1/token0 depuis sqrtPriceX96
-    // Formule Uniswap V3: price_token1_per_token0 = (sqrtPriceX96 / 2^96)^2 * 10^(dec0 - dec1)
-    let price_token1_per_token0: f64 = if pool_info.sqrt_price_x96 != U256::zero() {
-        let sqrt_f = u256_to_f64(pool_info.sqrt_price_x96);
-        let ratio = sqrt_f / 2f64.powi(96);
-        let scale_pow = (dec0 as i32) - (dec1 as i32); // ✅ CORRECT: dec0 - dec1
-        (ratio * ratio) * 10f64.powi(scale_pow)
-    } else if let (Some(r0), Some(r1)) = (pool_info.reserve0, pool_info.reserve1) {
-        // V2 fallback: price = (r1/10^dec1) / (r0/10^dec0)
-        let r0_f = u256_to_f64(r0);
-        let r1_f = u256_to_f64(r1);
-        if r0_f > 0.0 && r1_f > 0.0 {
-            let q0 = r0_f / 10f64.powi(dec0 as i32);
-            let q1 = r1_f / 10f64.powi(dec1 as i32);
-            if q0 > 0.0 { q1 / q0 } else { 0.0 }
+        let price_token1_per_token0: f64 = if pool_info.sqrt_price_x96 != U256::zero() {
+            let sqrt_f = u256_to_f64(pool_info.sqrt_price_x96);
+            let ratio = sqrt_f / 2f64.powi(96);
+            let scale_pow = (dec0 as i32) - (dec1 as i32);
+            (ratio * ratio) * 10f64.powi(scale_pow)
+        } else if let (Some(r0), Some(r1)) = (pool_info.reserve0, pool_info.reserve1) {
+            let r0_f = u256_to_f64(r0);
+            let r1_f = u256_to_f64(r1);
+            if r0_f > 0.0 && r1_f > 0.0 {
+                let q0 = r0_f / 10f64.powi(dec0 as i32);
+                let q1 = r1_f / 10f64.powi(dec1 as i32);
+                if q0 > 0.0 { q1 / q0 } else { 0.0 }
+            } else {
+                0.0
+            }
         } else {
             0.0
-        }
-    } else {
-        0.0
-    };
+        };
 
-    // L'inverse
-    let price_token0_per_token1: f64 = if price_token1_per_token0 == 0.0 { 
-        0.0 
-    } else { 
-        1.0 / price_token1_per_token0 
-    };
+        let price_token0_per_token1: f64 = if price_token1_per_token0 == 0.0 { 
+            0.0 
+        } else { 
+            1.0 / price_token1_per_token0 
+        };
 
-    Ok(DexPrice {
-        pool: pool_info.clone(),
-        token1_price_in_token0: price_token1_per_token0, // Combien de token1 pour 1 token0
-        token0_price_in_token1: price_token0_per_token1, // Combien de token0 pour 1 token1
-    })
-}
+        Ok(DexPrice {
+            pool: pool_info.clone(),
+            token1_price_in_token0: price_token1_per_token0,
+            token0_price_in_token1: price_token0_per_token1,
+            last_updated_block: 0, // 🔥 Sera rempli par get_price_snapshot
+        })
+    }
 
     fn get_token_decimals(
         &self,
         token0: &ethers::types::Address,
         token1: &ethers::types::Address,
     ) -> (u8, u8) {
-        // ✅ FIX: Comparer les Address directement, pas en string
         let usdt_addr = self.dex_fetcher.config.usdt_address;
         let ubtc_addr = self.dex_fetcher.config.ubtc_address;
 
@@ -161,29 +161,32 @@ impl PricingEngine {
         (d0, d1)
     }
     
-    /// ✅ NOUVEAU: Obtenir le prix en USDT d'un token, peu importe l'ordre de la pool
-    /// Retourne Some((symbol, prix_en_usdt)) si la pool contient USDT, None sinon
     pub fn get_price_in_usdt(&self, dex_price: &DexPrice) -> Option<(String, f64)> {
         let usdt = self.usdt_address;
         let token0 = dex_price.pool.token0;
         let token1 = dex_price.pool.token1;
         
-        // Cas 1: token1 est USDT
-        // Alors price_token1_per_token0 donne directement le prix de token0 en USDT
         if token1 == usdt {
             let symbol = self.dex_fetcher.get_token_symbol(&token0);
             return Some((symbol.to_string(), dex_price.token1_price_in_token0));
         }
         
-        // Cas 2: token0 est USDT  
-        // Alors price_token0_per_token1 donne directement le prix de token1 en USDT
         if token0 == usdt {
             let symbol = self.dex_fetcher.get_token_symbol(&token1);
             return Some((symbol.to_string(), dex_price.token0_price_in_token1));
         }
         
-        // Cas 3: Aucun des deux n'est USDT (ex: HYPE/uBTC)
-        // TODO: Utiliser un prix de référence ou une pool intermédiaire
         None
+    }
+    
+    /// 🔥 NOUVEAU - Détermine si un pool est "fresh" (mis à jour il y a moins de 3 blocs)
+    pub fn is_fresh(&self, pool_last_block: u64, current_block: u64) -> bool {
+        if pool_last_block == 0 {
+            // Jamais mis à jour par un event
+            return false;
+        }
+        
+        // Fresh si mis à jour dans les 2 derniers blocs (current ou current-1 ou current-2)
+        current_block.saturating_sub(pool_last_block) < 3
     }
 }
