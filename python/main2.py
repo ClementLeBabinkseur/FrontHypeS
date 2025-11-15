@@ -11,7 +11,7 @@ SLIPPAGE_MAX: float = 0.002  # 0.2% (note : dans le Rust c'était 0.002 = 0.2%)
 MAX_TICKS = 1000
 
 # Par défaut (remplace via env vars si tu veux)
-DEFAULT_RPC = os.environ.get("RPC_URL", "https://mainnet.infura.io/v3/2cdc1f3c65d74d1f85ca8570dc1fd0cb")
+DEFAULT_RPC = os.environ.get("RPC_URL", "https://rpc.hyperliquid.xyz/evm")
 DEFAULT_POOL = os.environ.get("POOL_ADDRESS", "0xBd19E19E4b70eB7F248695a42208bc1EdBBFb57D")  # HYPE/USDT
 
 # ---------- ABIs (simplifiés — uniquement fonctions utilisées) ----------
@@ -285,12 +285,19 @@ def main():
     try:
         token0_addr = pool_contract.functions.token0().call()
         token1_addr = pool_contract.functions.token1().call()
+        print(f"Token0 address: {token0_addr}")
+        print(f"Token1 address: {token1_addr}")
     except Exception as e:
-        print("Erreur récupération token0/token1:", e)
+        print("❌ Erreur récupération token0/token1:", e)
+        # Afficher aussi le code du réseau / chain id pour diagnostiquer
+        try:
+            print("Chain ID:", w3.eth.chain_id)
+        except:
+            pass
         return
 
-    token0 = w3.eth.contract(address=Web3.toChecksumAddress(token0_addr), abi=ERC20_ABI)
-    token1 = w3.eth.contract(address=Web3.toChecksumAddress(token1_addr), abi=ERC20_ABI)
+    token0 = w3.eth.contract(address=Web3.to_checksum_address(token0_addr), abi=ERC20_ABI)
+    token1 = w3.eth.contract(address=Web3.to_checksum_address(token1_addr), abi=ERC20_ABI)
 
     try:
         decimal0 = int(token0.functions.decimals().call())
