@@ -293,22 +293,22 @@ class Pool:
         try:
             slot0 = pool_contract.functions.slot0().call()
             sqrt_price = int(slot0[0])
-            current_tick = int(slot0[1])
+            self.current_tick = int(slot0[1])
         except Exception as e:
             print("Erreur slot0():", e)
             return
 
         try:
-            tick_spacing = int(pool_contract.functions.tickSpacing().call())
+            self.tick_spacing = int(pool_contract.functions.tickSpacing().call())
         except:
-            tick_spacing = 60
+            self.tick_spacing = 60
 
         try:
-            liquidity = int(pool_contract.functions.liquidity().call())
+            self.liquidity = int(pool_contract.functions.liquidity().call())
         except:
-            liquidity = 0
+            self.liquidity = 0
 
-        aligned_tick = align_tick_to_spacing(current_tick, tick_spacing)
+        self.aligned_tick = align_tick_to_spacing(self.current_tick, self.tick_spacing)
         self.current_price = sqrt_price_x96_to_price(
             sqrt_price, 
             self.decimal0, 
@@ -317,26 +317,26 @@ class Pool:
 
         try:
             gas_price = self.w3.eth.gas_price
-            gas_price_wei = int(gas_price)
-            gas_price_gwei = gas_price_wei / 1e9
-            gas_price_hype = gas_price_gwei / 1e9
+            self.gas_price_wei = int(gas_price)
+            self.gas_price_gwei = self.gas_price_wei / 1e9
+            self.gas_price_hype = self.gas_price_gwei / 1e9
         except:
-            gas_price_wei = gas_price_gwei = gas_price_hype = 0
+            self.gas_price_wei = self.gas_price_gwei = self.gas_price_hype = 0
 
-        '''print("═══════════════════════════════════════")
+        print("═══════════════════════════════════════")
         print(f"📊 État actuel de la pool {self.symbol0}/{self.symbol1}")
         print("═══════════════════════════════════════")
-        print(f"Tick actuel (brut): {current_tick}")
-        print(f"Tick aligné (spacing={tick_spacing}): {aligned_tick}")'''
+        print(f"Tick actuel (brut): {self.current_tick}")
+        print(f"Tick aligné (spacing={self.tick_spacing}): {self.aligned_tick}")
         print(f"Prix actuel: {self.current_price:.12f} {self.symbol1} per {self.symbol0}")
-        '''print(f"Liquidité totale: {liquidity}")
-        print(f"Tick spacing: {tick_spacing}")
+        print(f"Liquidité totale: {self.liquidity}")
+        print(f"Tick spacing: {self.tick_spacing}")
         print("═══════════════════════════════════════")
         print("⛽ Gas price:")
-        print(f"   Wei:  {gas_price_wei:.0f}")
-        print(f"   Gwei: {gas_price_gwei:.6f}")
-        print(f"   HYPE: {gas_price_hype:.12f}")
-        print("═══════════════════════════════════════\n")'''
+        print(f"   Wei:  {self.gas_price_wei:.0f}")
+        print(f"   Gwei: {self.gas_price_gwei:.6f}")
+        print(f"   HYPE: {self.gas_price_hype:.12f}")
+        print("═══════════════════════════════════════\n")
     
     
     
@@ -419,9 +419,9 @@ def main():
 
 
         pool_objects.append(pool_obj)
-
+        print("═══════════════════════════════════════")
         print(f"✅ Objet Pool créé : {pool_obj}\n")
-
+        print("═══════════════════════════════════════")
 
     # ↑↑ CONF
     # slot0  
@@ -434,22 +434,24 @@ def main():
     spread_pct = ((pool_objects[1].current_price - pool_objects[0].current_price)/pool_objects[1].current_price)*100
     print(f"\nSpread brut : {spread_brut}")
     print(f"Spread en pourcentage : {spread_pct}")
-    
-'''        
+        
         # A partir de la il montre le trade, les données des pools sont au dessus
-    if spread_pct < 0.2:
-
+    if abs(spread_pct) > 0.1:
+        if spread_pct > 0:
+            pool=pool_objects[0]
+        else:
+            pool=pool_objects[1]
         analysis = parse_liquidity_upward(
                 w3=w3,
                 pool_contract=pool_contract,
-                current_tick=aligned_tick,
-                tick_spacing=tick_spacing,
+                current_tick=pool.aligned_tick,
+                tick_spacing=pool.tick_spacing,
                 decimal0=decimal0,
                 decimal1=decimal1,
                 symbol0=symbol0,
                 symbol1=symbol1,
-                current_liquidity=current_liquidity,
-                current_price=current_price,
+                current_liquidity=pool.liquidity,
+                current_price=pool.current_price,
             )
 
         print("\n═══════════════════════════════════════")
@@ -481,7 +483,7 @@ def main():
         else:
             print("\n⚠️  Trade incomplet")
         print("═══════════════════════════════════════\n")
-'''
+    else: print("Pas assez de spread (pas rentable)")
 
 if __name__ == "__main__":
     main()
