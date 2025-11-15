@@ -265,12 +265,33 @@ def parse_liquidity_upward(
         trade_slippage=final_slippage,
     )
 
+
+
+
+
+class Pool:
+    def __init__(self, pool_address, pool_contract, decimal0, decimal1, w3):
+        self.pool_address = pool_address
+        self.pool_contract = pool_contract
+        self.decimal0 = decimal0
+        self.decimal1=decimal1
+        self.w3=w3
+
+    def data(self):
+        
+        return self.current_tick, self.tick_spacing, self.current_liquidity, self.aligned_tick, self.current_price
+    
+    def repr(self):
+        return f"<Pool {self.address[:8]}... {self.token0}/{self.token1}>"
+
+
+
 # ---------- Main ----------
 def main():
     rpc_url = os.environ.get("RPC_URL", DEFAULT_RPC)
 
     POOLS = [DEFAULT_POOL1,DEFAULT_POOL2]
-
+    pool_object = []
     for DEFAULT_POOL in POOLS:
         
         pool_address = os.environ.get("POOL_ADDRESS", DEFAULT_POOL)
@@ -323,8 +344,9 @@ def main():
 
         print(f"🪙 Token0: {symbol0} (decimals: {decimal0})")
         print(f"🪙 Token1: {symbol1} (decimals: {decimal1})\n")
-
-        # slot0
+        # ↑↑ CONF
+        # slot0  
+        # ↓↓ Data 
         try:
             slot0 = pool_contract.functions.slot0().call()
             sqrt_price_x96 = int(slot0[0])
@@ -370,6 +392,8 @@ def main():
         print(f"   Gwei: {gas_price_gwei:.6f}")
         print(f"   HYPE: {gas_price_hype:.12f}")
         print("═══════════════════════════════════════\n")
+        
+        # A partir de la il montre le trade, les données des pools sont au dessus
 
         analysis = parse_liquidity_upward(
             w3=w3,
