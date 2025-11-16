@@ -8,7 +8,7 @@ import time
 
 # ---------- Constantes (adaptables) ----------
 TRADE_AMOUNT_USDT: float = 15000.0  # montant cible en USDT
-SLIPPAGE_MAX: float = 1.002  # 0.2% (note : dans le Rust c'était 0.002 = 0.2%)
+SLIPPAGE_MAX: float = 0.002  # 0.2% (note : dans le Rust c'était 0.002 = 0.2%)
 MAX_TICKS = 1000
 SPREAD_MIN=0
 # Par défaut (remplace via env vars si tu veux)
@@ -267,6 +267,9 @@ def parse_liquidity_upward(
     )
 
 # ---------- Core parsing / simulation (backward) ----------
+'''
+    ERREUR dans les decimal des token (comme avant c'etait USDT les decimales sont pour l'USDT je crois)
+'''
 def parse_liquidity_backward(
     w3: Web3,
     pool_contract,
@@ -680,6 +683,8 @@ def main():
         print("══════════════════════════════════════════════════════════════════════════════")
         resultat_usdt = total_usdt_gotten - total_usdt_spent
         print(f" 📈 Resultat : {resultat_usdt} USDT 📈 ")
+
+
     else: print("Pas assez de spread (pas rentable)")
 
 if __name__ == "__main__":
