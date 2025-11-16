@@ -41,8 +41,14 @@ TICK_SPACING = 50  # à vérifier
 SQRT_LIMIT = 0
 params = (WHYPE, USDT0, AMOUNT_IN, TICK_SPACING, SQRT_LIMIT)
 
-print(time.localtime())
+
+start = time.time()
+
 (amountOut, sqrtPriceX96After, ticksCrossed, gasEstimate) = quoter.functions.quoteExactInputSingle(params).call()
+
+end = time.time()
+elapsed_ms = (end - start) * 1000
+print(f"Temps d'exécution : {elapsed_ms:.2f} ms")
 
 print(f"✅ Pour 1 WHYPE → environ {amountOut / 1e6:.2f} USD₮0 et on a traversé {ticksCrossed} tick")
 gasEstimate = w3.from_wei(gasEstimate, "gwei")
