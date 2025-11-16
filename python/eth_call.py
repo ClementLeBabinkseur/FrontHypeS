@@ -1,38 +1,49 @@
 from web3 import Web3
+import time
 
-# --- Connexion à ton endpoint Alchemy ---
-ALCHEMY_URL = "https://eth-mainnet.g.alchemy.com/v2/Em6bwd2PwavhDyNR35yUd"
+ALCHEMY_URL = "https://hyperliquid-mainnet.g.alchemy.com/v2/Em6bwd2PwavhDyNR35yUd"
 w3 = Web3(Web3.HTTPProvider(ALCHEMY_URL))
 assert w3.is_connected(), "Connexion échouée"
 
-# --- Contrat Quoter Uniswap V3 ---
-QUOTER = Web3.to_checksum_address("0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6")
+QUOTER = Web3.to_checksum_address("0x8CD6acfF822eE9E3240501b3CeDa64364791e4E2")
 
 abi = [{
     "name": "quoteExactInputSingle",
     "type": "function",
-    "inputs": [
-        {"name": "tokenIn", "type": "address"},
-        {"name": "tokenOut", "type": "address"},
-        {"name": "fee", "type": "uint24"},
-        {"name": "amountIn", "type": "uint256"},
-        {"name": "sqrtPriceLimitX96", "type": "uint160"}
+    "inputs": [{
+        "components": [
+            {"name": "tokenIn", "type": "address"},
+            {"name": "tokenOut", "type": "address"},
+            {"name": "amountIn", "type": "uint256"},
+            {"name": "tickSpacing", "type": "int24"},
+            {"name": "sqrtPriceLimitX96", "type": "uint160"}
+        ],
+        "name": "params",
+        "type": "tuple"
+    }],
+    "outputs": [
+        {"name": "amountOut", "type": "uint256"},
+        {"name": "sqrtPriceX96After", "type": "uint160"},
+        {"name": "initializedTicksCrossed", "type": "uint32"},
+        {"name": "gasEstimate", "type": "uint256"}
     ],
-    "outputs": [{"name": "amountOut", "type": "uint256"}],
-    "stateMutability": "view"
+    "stateMutability": "nonpayable"
 }]
-
-# --- Paramètres ---
-WETH = Web3.to_checksum_address("0xC02aaA39b223FE8D0A0E5C4F27eAD9083C756Cc2")
-USDC = Web3.to_checksum_address("0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")
-FEE = 3000
-AMOUNT_IN = Web3.to_wei(1, "ether")
 
 quoter = w3.eth.contract(address=QUOTER, abi=abi)
 
-# --- Simulation via eth_call ---
-amount_out = quoter.functions.quoteExactInputSingle(
-    WETH, USDC, FEE, AMOUNT_IN, 0
-).call()
+WHYPE = Web3.to_checksum_address("0x5555555555555555555555555555555555555555")
+USDT0 = Web3.to_checksum_address("0xB8CE59FC3717ada4C02eaDF9682A9e934F625ebb")
 
-print(f"✅ Pour 1 ETH → environ {amount_out / 1e6:.2f} USDC")
+# Exemple : suppose WHYPE a 18 décimales
+AMOUNT_IN = Web3.to_wei(800, "ether")  # 1 WHYPE
+TICK_SPACING = 50  # à vérifier
+SQRT_LIMIT = 0
+params = (WHYPE, USDT0, AMOUNT_IN, TICK_SPACING, SQRT_LIMIT)
+
+print(time.localtime())
+(amountOut, sqrtPriceX96After, ticksCrossed, gasEstimate) = quoter.functions.quoteExactInputSingle(params).call()
+
+print(f"✅ Pour 1 WHYPE → environ {amountOut / 1e6:.2f} USD₮0 et on a traversé {ticksCrossed} tick")
+gasEstimate = w3.from_wei(gasEstimate, "gwei")
+print("Gas estimate:", gasEstimate)
