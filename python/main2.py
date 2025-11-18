@@ -7,10 +7,10 @@ from dataclasses import dataclass, field
 import time
 
 # ---------- Constantes (adaptables) ----------
-TRADE_AMOUNT_USDT: float = 15000.0  # montant cible en USDT
+TRADE_AMOUNT_USDT: float = 5000.0  # montant cible en USDT
 SLIPPAGE_MAX: float = 0.002  # 0.2% (note : dans le Rust c'était 0.002 = 0.2%)
 MAX_TICKS = 1000
-SPREAD_MIN=0
+SPREAD_MIN=0.2
 # Par défaut (remplace via env vars si tu veux)
 DEFAULT_RPC = os.environ.get("RPC_URL", "https://rpc.hyperliquid.xyz/evm")
 DEFAULT_POOL1 = os.environ.get("POOL_ADDRESS", "0xBd19E19E4b70eB7F248695a42208bc1EdBBFb57D")  # HYPE/USDT Project X
@@ -423,6 +423,7 @@ class Pool:
         self.symbol0 = symbol0     
         self.symbol1 = symbol1     
         self.w3 = w3
+        self.previous_price = 0.0
 
 
 
@@ -434,7 +435,7 @@ class Pool:
         pool_contract = self.w3.eth.contract(address=self.pool_addr, abi=UNIV3_POOL_ABI)
 
         try:
-            slot0 = pool_contract.functions.slot0().call()
+            slot0 = pool_contract.functions.slot0().call(block_identifier="latest")
             sqrt_price = int(slot0[0])
             self.current_tick = int(slot0[1])
         except Exception as e:
@@ -466,19 +467,24 @@ class Pool:
         except:
             self.gas_price_wei = self.gas_price_gwei = self.gas_price_hype = 0
 
-        print("═══════════════════════════════════════")
+        advert = ""
+        if self.current_price != self.previous_price:
+            advert = "[➡️ NEW]"
+        self.previous_price = self.current_price
+
+        '''print("═══════════════════════════════════════")
         print(f"📊 État actuel de la pool {self.symbol0}/{self.symbol1}")
         print("═══════════════════════════════════════")
         print(f"Tick actuel (brut): {self.current_tick}")
-        print(f"Tick aligné (spacing={self.tick_spacing}): {self.aligned_tick}")
-        print(f"Prix actuel: {self.current_price:.12f} {self.symbol1} per {self.symbol0}")
-        print(f"Liquidité totale: {self.liquidity}")
+        print(f"Tick aligné (spacing={self.tick_spacing}): {self.aligned_tick}")'''
+        print(f"Prix actuel: {advert} {self.current_price:.12f} {self.symbol1} per {self.symbol0}")
+        '''print(f"Liquidité totale: {self.liquidity}")
         print(f"Tick spacing: {self.tick_spacing}")
         print("═══════════════════════════════════════")
         print("⛽ Gas price:")
         print(f"   Wei:  {self.gas_price_wei:.0f}")
         print(f"   Gwei: {self.gas_price_gwei:.6f}")
-        print(f"   HYPE: {self.gas_price_hype:.12f}")
+        print(f"   HYPE: {self.gas_price_hype:.12f}")'''
         print("═══════════════════════════════════════\n")
     
     
@@ -569,123 +575,130 @@ def main():
     # ↑↑ CONF
     # slot0  
     # ↓↓ Data 
+    spread_pct = 0
+    while abs(spread_pct) < SPREAD_MIN:
+        for pool in pool_objects:
+            print(f"\n🪙    POOL: {pool}")
+            pool.print_state()
+        spread_brut = (pool_objects[1].current_price - pool_objects[0].current_price)
+        spread_pct = ((pool_objects[1].current_price - pool_objects[0].current_price)/pool_objects[1].current_price)*100
+        print(f"\nSpread brut : {spread_brut}")
+        print(f"Spread en pourcentage : {spread_pct}")
+            
+            # A partir de la il montre le trade, les données des pools sont au dessus
+        if abs(spread_pct) > SPREAD_MIN:
+            if spread_pct > 0:
+                pool=pool_objects[0]
+                pool_sell = pool_objects[-1]
+            else:
+                pool=pool_objects[-1]
+                pool_sell = pool_objects[0]
 
-    for pool in pool_objects:
-        print(f"\n🪙    POOL: {pool}")
-        pool.print_state()
-    spread_brut = (pool_objects[1].current_price - pool_objects[0].current_price)
-    spread_pct = ((pool_objects[1].current_price - pool_objects[0].current_price)/pool_objects[1].current_price)*100
-    print(f"\nSpread brut : {spread_brut}")
-    print(f"Spread en pourcentage : {spread_pct}")
-        
-        # A partir de la il montre le trade, les données des pools sont au dessus
-    if abs(spread_pct) > SPREAD_MIN:
-        if spread_pct > 0:
-            pool=pool_objects[0]
-            pool_sell = pool_objects[-1]
-        else:
-            pool=pool_objects[-1]
-            pool_sell = pool_objects[0]
+            # ---- ACHAT (UPWARD) ----
 
-        # ---- ACHAT (UPWARD) ----
+            analysis = parse_liquidity_upward(
+                    w3=w3,
+                    pool_contract=pool_contract,
+                    current_tick=pool.aligned_tick,
+                    tick_spacing=pool.tick_spacing,
+                    decimal0=decimal0,
+                    decimal1=decimal1,
+                    symbol0=symbol0,
+                    symbol1=symbol1,
+                    current_liquidity=pool.liquidity,
+                    current_price=pool.current_price,
+                )
 
-        analysis = parse_liquidity_upward(
-                w3=w3,
-                pool_contract=pool_contract,
-                current_tick=pool.aligned_tick,
-                tick_spacing=pool.tick_spacing,
-                decimal0=decimal0,
-                decimal1=decimal1,
-                symbol0=symbol0,
-                symbol1=symbol1,
-                current_liquidity=pool.liquidity,
-                current_price=pool.current_price,
-            )
+            print("\n══════════════════════════════════════════════════════════════════════════════")
+            print("📈 Résultats de la simulation de trade(ACHAT)")
+            print("══════════════════════════════════════════════════════════════════════════════")
+            print(f"Montant cible: ${TRADE_AMOUNT_USDT:.2f} USDT")
+            print(f"Montant tradé: ${analysis.trade_amount_filled:.2f} USDT")
+            completion_pct = (analysis.trade_amount_filled / TRADE_AMOUNT_USDT) * 100.0 if TRADE_AMOUNT_USDT != 0 else 0.0
+            print(f"Complétion du trade: {completion_pct:.2f}%")
 
-        print("\n══════════════════════════════════════════════════════════════════════════════")
-        print("📈 Résultats de la simulation de trade(ACHAT)")
-        print("══════════════════════════════════════════════════════════════════════════════")
-        print(f"Montant cible: ${TRADE_AMOUNT_USDT:.2f} USDT")
-        print(f"Montant tradé: ${analysis.trade_amount_filled:.2f} USDT")
-        completion_pct = (analysis.trade_amount_filled / TRADE_AMOUNT_USDT) * 100.0 if TRADE_AMOUNT_USDT != 0 else 0.0
-        print(f"Complétion du trade: {completion_pct:.2f}%")
+            print("\n💰 Résultats du trade:")
+            print(f"   Prix actuel de la pool: {analysis.current_price:.12f}")
+            print(f"   Prix moyen d'exécution: {analysis.average_execution_price:.12f}")
+            print(f"   Slippage du trade: {analysis.trade_slippage * 100.0:.4f}%")
+            total_hype_bought = sum(t.amount_token0 for t in analysis.ticks_explored)
+            total_usdt_spent = sum(t.amount_token1 for t in analysis.ticks_explored)
 
-        print("\n💰 Résultats du trade:")
-        print(f"   Prix actuel de la pool: {analysis.current_price:.12f}")
-        print(f"   Prix moyen d'exécution: {analysis.average_execution_price:.12f}")
-        print(f"   Slippage du trade: {analysis.trade_slippage * 100.0:.4f}%")
-        total_hype_bought = sum(t.amount_token0 for t in analysis.ticks_explored)
-        total_usdt_spent = sum(t.amount_token1 for t in analysis.ticks_explored)
+            print("\n📊 Détails du trade:")
+            print(f"   {symbol0} acheté: {total_hype_bought:.6f}")
+            print(f"   {symbol1} dépensé: {total_usdt_spent:.2f}")
+            print(f"   Nombre de ticks traversés: {len(analysis.ticks_explored)}")
+            print(f"   Ticks: {analysis.start_tick} → {analysis.end_tick}")
+            print(f"   Prix range: {analysis.start_price:.12f} → {analysis.end_price:.12f}")
 
-        print("\n📊 Détails du trade:")
-        print(f"   {symbol0} acheté: {total_hype_bought:.6f}")
-        print(f"   {symbol1} dépensé: {total_usdt_spent:.2f}")
-        print(f"   Nombre de ticks traversés: {len(analysis.ticks_explored)}")
-        print(f"   Ticks: {analysis.start_tick} → {analysis.end_tick}")
-        print(f"   Prix range: {analysis.start_price:.12f} → {analysis.end_price:.12f}")
+            buy_slippage = analysis.trade_slippage
 
-        if analysis.trade_amount_filled >= TRADE_AMOUNT_USDT:
-            print("\n✅ Trade complété avec succès!")
-        elif abs(analysis.trade_slippage) > SLIPPAGE_MAX:
-            print("\n⚠️  Trade stoppé: slippage max atteint")
-        else:
-            print("\n⚠️  Trade incomplet")
-        print("═══════════════════════════════════════\n")
+            if analysis.trade_amount_filled >= TRADE_AMOUNT_USDT:
+                print("\n✅ Trade complété avec succès!")
+            elif abs(analysis.trade_slippage) > SLIPPAGE_MAX:
+                print("\n⚠️  Trade stoppé: slippage max atteint")
+            else:
+                print("\n⚠️  Trade incomplet")
+            print("═══════════════════════════════════════\n")
 
-        # ---- VENTE (Backward)) ----
-        pool = pool_sell
-        analysis = parse_liquidity_backward(
-                w3=w3,
-                pool_contract=pool_contract,
-                current_tick=pool.aligned_tick,
-                tick_spacing=pool.tick_spacing,
-                decimal0=decimal0,
-                decimal1=decimal1,
-                symbol0=symbol0,
-                symbol1=symbol1,
-                current_liquidity=pool.liquidity,
-                current_price=pool.current_price,
-                TRADE_AMOUNT_TOKEN0=total_hype_bought
-            )
-        TRADE_AMOUNT_TOKEN0=total_hype_bought
-        print("\n══════════════════════════════════════════════════════════════════════════════")
-        print("📈 Résultats de la simulation de trade (VENTE)")
-        print("══════════════════════════════════════════════════════════════════════════════")
-        print(f"Montant cible: {TRADE_AMOUNT_TOKEN0:.2f} HYPE")
-        print(f"Montant tradé: {analysis.trade_amount_filled:.2f} HYPE")
-        completion_pct = (analysis.trade_amount_filled / TRADE_AMOUNT_TOKEN0) * 100.0 if TRADE_AMOUNT_TOKEN0 != 0 else 0.0
-        print(f"Complétion du trade: {completion_pct:.2f}%")
+            # ---- VENTE (Backward)) ----
+            pool = pool_sell
+            analysis = parse_liquidity_backward(
+                    w3=w3,
+                    pool_contract=pool_contract,
+                    current_tick=pool.aligned_tick,
+                    tick_spacing=pool.tick_spacing,
+                    decimal0=decimal0,
+                    decimal1=decimal1,
+                    symbol0=symbol0,
+                    symbol1=symbol1,
+                    current_liquidity=pool.liquidity,
+                    current_price=pool.current_price,
+                    TRADE_AMOUNT_TOKEN0=total_hype_bought
+                )
+            TRADE_AMOUNT_TOKEN0=total_hype_bought
+            print("\n══════════════════════════════════════════════════════════════════════════════")
+            print("📈 Résultats de la simulation de trade (VENTE)")
+            print("══════════════════════════════════════════════════════════════════════════════")
+            print(f"Montant cible: {TRADE_AMOUNT_TOKEN0:.2f} HYPE")
+            print(f"Montant tradé: {analysis.trade_amount_filled:.2f} HYPE")
+            completion_pct = (analysis.trade_amount_filled / TRADE_AMOUNT_TOKEN0) * 100.0 if TRADE_AMOUNT_TOKEN0 != 0 else 0.0
+            print(f"Complétion du trade: {completion_pct:.2f}%")
 
-        print("\n💰 Résultats du trade:")
-        print(f"   Prix actuel de la pool: {analysis.current_price:.12f}")
-        print(f"   Prix moyen d'exécution: {analysis.average_execution_price:.12f}")
-        print(f"   Slippage du trade: {analysis.trade_slippage * 100.0:.4f}%")
-        total_hype_sold = sum(t.amount_token0 for t in analysis.ticks_explored)
-        total_usdt_gotten = sum(t.amount_token1 for t in analysis.ticks_explored)
+            print("\n💰 Résultats du trade:")
+            print(f"   Prix actuel de la pool: {analysis.current_price:.12f}")
+            print(f"   Prix moyen d'exécution: {analysis.average_execution_price:.12f}")
+            print(f"   Slippage du trade: {analysis.trade_slippage * 100.0:.4f}%")
+            total_hype_sold = sum(t.amount_token0 for t in analysis.ticks_explored)
+            total_usdt_gotten = sum(t.amount_token1 for t in analysis.ticks_explored)
+    
+            print("\n📊 Détails du trade:")
+            print(f"   {symbol0} Vendu: {total_hype_sold:.6f}")
+            print(f"   {symbol1} Obtenu: {total_usdt_gotten:.2f}")
+            print(f"   Nombre de ticks traversés: {len(analysis.ticks_explored)}")
+            print(f"   Ticks: {analysis.start_tick} → {analysis.end_tick}")
+            print(f"   Prix range: {analysis.start_price:.12f} → {analysis.end_price:.12f}")
 
-        print("\n📊 Détails du trade:")
-        print(f"   {symbol0} Vendu: {total_hype_sold:.6f}")
-        print(f"   {symbol1} Obtenu: {total_usdt_gotten:.2f}")
-        print(f"   Nombre de ticks traversés: {len(analysis.ticks_explored)}")
-        print(f"   Ticks: {analysis.start_tick} → {analysis.end_tick}")
-        print(f"   Prix range: {analysis.start_price:.12f} → {analysis.end_price:.12f}")
+            total_slippage = buy_slippage + analysis.trade_slippage
 
-        if analysis.trade_amount_filled >= TRADE_AMOUNT_TOKEN0:
-            print("\n✅ Trade complété avec succès!")
-        elif abs(analysis.trade_slippage) > SLIPPAGE_MAX:
-            print("\n⚠️  Trade stoppé: slippage max atteint")
-        else:
-            print("\n⚠️  Trade incomplet")
-        print("═══════════════════════════════════════\n")
-        
-        print("\n══════════════════════════════════════════════════════════════════════════════")
-        print("📈 Résultats de la simulation de trade FINAL")
-        print("══════════════════════════════════════════════════════════════════════════════")
-        resultat_usdt = total_usdt_gotten - total_usdt_spent
-        print(f" 📈 Resultat : {resultat_usdt} USDT 📈 ")
+            print(f"   Slippage finale du trade (BUY + SELL): {total_slippage * 100.0:.4f}%")
+
+            if abs(total_slippage) > SLIPPAGE_MAX:
+                print("\n⚠️  Trade stoppé: slippage max atteint")
+            elif analysis.trade_amount_filled >= TRADE_AMOUNT_TOKEN0:
+                print("\n✅ Trade complété avec succès!")
+            else:
+                print("\n⚠️  Trade incomplet")
+            print("═══════════════════════════════════════\n")
+            
+            print("\n══════════════════════════════════════════════════════════════════════════════")
+            print("📈 Résultats de la simulation de trade FINAL")
+            print("══════════════════════════════════════════════════════════════════════════════")
+            resultat_usdt = total_usdt_gotten - total_usdt_spent
+            print(f" 📈 Resultat : {resultat_usdt} USDT 📈 ")
 
 
-    else: print("Pas assez de spread (pas rentable)")
+        else: print("Pas assez de spread (pas rentable)")
 
 if __name__ == "__main__":
     main()
