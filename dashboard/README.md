@@ -1,72 +1,169 @@
-# 🐳 Docker Deployment Guide
+# 🚀 Hyperliquid Dashboard
 
-Guide complet pour déployer Hyperliquid Dashboard avec Docker sur Windows et Linux.
+Dashboard moderne pour tracker vos wallets Hyperliquid et Ethereum avec des balances en temps réel.
+
+![Dashboard Preview](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)
+![Docker](https://img.shields.io/badge/Docker-Ready-blue)
+![Node](https://img.shields.io/badge/Node-20%2B-green)
 
 ---
 
-## 📋 Prérequis
+## ✨ Fonctionnalités
 
-### Sur Windows
-1. **Docker Desktop** : https://www.docker.com/products/docker-desktop/
-2. **WSL 2** activé (Docker Desktop l'active automatiquement)
+### 💰 Gestion des Wallets
+- ✅ Support **Hyperliquid** (natif) et **Ethereum** (via Alchemy)
+- ✅ Ajout dynamique de wallets avec validation d'adresse
+- ✅ Nicknames personnalisables
+- ✅ Suppression en un clic
 
-### Sur Linux
-```bash
-# Installer Docker
-curl -fsSL https://get.docker.com -o get-docker.sh
-sudo sh get-docker.sh
+### 🏷️ Système de Tags
+- ✅ Tags personnalisables (Trading, DeFi, Main, etc.)
+- ✅ Filtrage multi-tags
+- ✅ Organisation flexible
 
-# Installer Docker Compose
-sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
+### 📊 Balances & Tokens
+- ✅ Refresh manuel des balances (économise les quotas API)
+- ✅ Sélection personnalisée des tokens à afficher
+- ✅ Total USD optionnel par wallet
+- ✅ Refresh individuel ou global
 
-# Ajouter votre user au groupe docker
-sudo usermod -aG docker $USER
-# Déconnectez-vous et reconnectez-vous
+### 🎨 Interface
+- ✅ Design **dark mode** moderne avec effet **glassmorphism**
+- ✅ Animations fluides
+- ✅ Responsive (mobile/tablet/desktop)
+- ✅ Icons Lucide React
+
+---
+
+## 🏗️ Architecture
+
+```
+hyperliquid-dashboard/
+├── backend/               # API Node.js + Express
+│   ├── server.js         # Serveur principal
+│   ├── package.json      # Dépendances
+│   ├── .env              # Variables (Alchemy API key)
+│   └── wallets.json      # Base de données JSON
+│
+├── frontend/             # React + Vite + Tailwind
+│   ├── src/
+│   │   ├── App.jsx       # Application principale
+│   │   └── components/   # Composants React
+│   ├── nginx.conf        # Config Nginx (Docker)
+│   └── package.json      # Dépendances
+│
+├── docker-compose.yml    # Orchestration Docker
+├── .env.example          # Template variables
+└── README.md             # Ce fichier
 ```
 
 ---
 
-## 🚀 Déploiement rapide
+## 🚀 Démarrage rapide
 
-### 1. Cloner/Copier le projet
+### Option 1 : Docker (Recommandé) 🐳
 
-```bash
-# Sur Linux
-cd /opt  # ou n'importe quel dossier
-git clone <votre-repo>
-cd hyperliquid-dashboard
-
-# Sur Windows
-cd C:\Projects
-git clone <votre-repo>
-cd hyperliquid-dashboard
-```
-
-### 2. Configuration
-
-Créer le fichier `.env` à la racine du projet :
+**Prérequis :** Docker & Docker Compose installés
 
 ```bash
-# Linux
+# 1. Cloner le projet
+git clone <repo-url>
+cd hyperliquid-dashboard
+
+# 2. Configurer les variables
 cp .env.example .env
-nano .env
+nano .env  # Ajouter votre ALCHEMY_API_KEY
 
-# Windows PowerShell
-Copy-Item .env.example .env
-notepad .env
+# 3. Lancer avec Docker
+docker-compose up -d --build
+
+# 4. Accéder à l'app
+# Frontend: http://localhost
+# Backend API: http://localhost:3001
 ```
 
-Remplir avec votre clé Alchemy :
+**Scripts automatiques :**
+- **Windows** : Double-cliquez sur `start-docker.bat`
+- **Linux** : `chmod +x start-docker.sh && ./start-docker.sh`
+
+📖 **Documentation complète :** [DOCKER-README.md](DOCKER-README.md)
+
+---
+
+### Option 2 : Développement local
+
+**Prérequis :** Node.js 20+ installé
+
+#### Backend
+```bash
+cd backend
+npm install
+cp .env.example .env
+nano .env  # Ajouter ALCHEMY_API_KEY
+npm run dev
+```
+
+#### Frontend (nouveau terminal)
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Accès : http://localhost:5173
+
+---
+
+## 🔧 Configuration
+
+### Variables d'environnement
+
+**Backend (`.env` dans `/backend`):**
 ```env
-ALCHEMY_API_KEY=votre_cle_ici
+PORT=3001
+ALCHEMY_API_KEY=votre_cle_alchemy
 ```
 
-### 3. Lancer l'application
+**Docker Compose (`.env` à la racine):**
+```env
+ALCHEMY_API_KEY=votre_cle_alchemy
+```
+
+### Obtenir une clé Alchemy
+
+1. Créez un compte sur [Alchemy](https://www.alchemy.com/)
+2. Créez une nouvelle app
+3. Sélectionnez **Ethereum Mainnet** et/ou **Hyperliquid**
+4. Copiez votre API Key
+
+---
+
+## 📡 API Endpoints
+
+### Wallets
+- `GET /api/wallets` - Liste tous les wallets
+- `POST /api/wallets` - Ajouter un wallet
+- `PUT /api/wallets/:id` - Modifier un wallet
+- `DELETE /api/wallets/:id` - Supprimer un wallet
+
+### Balances
+- `GET /api/wallets/:address/balances?blockchain=hyperliquid` - Récupérer les balances
+
+### Tags
+- `POST /api/tags` - Ajouter des tags
+
+### Health
+- `GET /health` - Statut du serveur
+
+---
+
+## 🐳 Docker
+
+### Commandes utiles
 
 ```bash
-# Build et démarrage
-docker-compose up -d --build
+# Démarrer
+docker-compose up -d
 
 # Voir les logs
 docker-compose logs -f
@@ -76,377 +173,163 @@ docker-compose down
 
 # Redémarrer
 docker-compose restart
-```
 
-### 4. Accéder à l'application
-
-Ouvrez votre navigateur : **http://localhost** ou **http://votre-ip-serveur**
-
----
-
-## 📁 Structure du projet
-
-```
-hyperliquid-dashboard/
-├── backend/
-│   ├── Dockerfile
-│   ├── .dockerignore
-│   ├── server.js
-│   ├── package.json
-│   ├── .env               # Créé par vous (clé API)
-│   └── wallets.json       # Créé automatiquement
-│
-├── frontend/
-│   ├── Dockerfile
-│   ├── .dockerignore
-│   ├── nginx.conf
-│   ├── src/
-│   └── package.json
-│
-├── docker-compose.yml
-├── .env                   # Variables pour Docker Compose
-└── DOCKER-README.md       # Ce fichier
-```
-
----
-
-## 🔧 Commandes Docker utiles
-
-### Gestion des containers
-
-```bash
-# Voir les containers en cours
-docker-compose ps
-
-# Logs en temps réel
-docker-compose logs -f
-
-# Logs d'un service spécifique
-docker-compose logs -f backend
-docker-compose logs -f frontend
-
-# Redémarrer un service
-docker-compose restart backend
-
-# Arrêter tous les services
-docker-compose stop
-
-# Supprimer les containers
-docker-compose down
-
-# Supprimer containers + volumes
-docker-compose down -v
-```
-
-### Build et mise à jour
-
-```bash
-# Rebuild après changement de code
+# Rebuild après changement
 docker-compose up -d --build
-
-# Rebuild un service spécifique
-docker-compose build backend
-docker-compose up -d backend
-
-# Pull les dernières images
-docker-compose pull
 ```
 
-### Debugging
-
-```bash
-# Accéder au shell d'un container
-docker-compose exec backend sh
-docker-compose exec frontend sh
-
-# Voir les ressources utilisées
-docker stats
-
-# Inspecter un container
-docker inspect hyperliquid-backend
-```
-
----
-
-## 🌐 Configuration réseau
-
-### Ports utilisés
+### Ports
 - **Frontend** : `80` (HTTP)
 - **Backend** : `3001` (API)
 
-### Changer les ports
-
-Modifiez `docker-compose.yml` :
-
-```yaml
-services:
-  frontend:
-    ports:
-      - "8080:80"  # Accès sur port 8080 au lieu de 80
-  
-  backend:
-    ports:
-      - "3002:3001"  # Accès sur port 3002 au lieu de 3001
-```
-
-**⚠️ Note :** Si vous changez le port backend, mettez à jour `nginx.conf` dans le frontend :
-```nginx
-location /api {
-    proxy_pass http://backend:3001;  # Gardez 3001 ici (port interne)
-}
-```
+### Volumes
+Les données des wallets sont persistées dans `backend/wallets.json`
 
 ---
 
-## 💾 Persistence des données
+## 🛠️ Stack technique
 
-Les données des wallets sont persistées dans `backend/wallets.json` grâce au volume Docker :
+### Backend
+- **Node.js** 20+ avec Express
+- **Axios** pour les appels API
+- **Cors** pour les requêtes cross-origin
+- **dotenv** pour les variables d'environnement
 
-```yaml
-volumes:
-  - ./backend/wallets.json:/app/wallets.json
+### Frontend
+- **React** 18 avec Hooks
+- **Vite** pour le build ultra-rapide
+- **Tailwind CSS** pour le styling
+- **Lucide React** pour les icônes
+- **Axios** pour les requêtes API
+
+### APIs externes
+- **Hyperliquid API** : `https://api.hyperliquid.xyz/info`
+- **Alchemy** : Pour Ethereum & tokens ERC-20
+
+### DevOps
+- **Docker** & **Docker Compose**
+- **Nginx** pour servir le frontend en production
+
+---
+
+## 📊 Blockchains supportées
+
+| Blockchain | Tokens supportés | API utilisée |
+|------------|------------------|--------------|
+| **Hyperliquid** | HYPE, USDC, BTC, ETH, + autres | API native publique |
+| **Ethereum** | ETH + tous les ERC-20 | Alchemy |
+
+---
+
+## 🔒 Sécurité
+
+- ✅ Clés API stockées dans `.env` (jamais commité)
+- ✅ CORS configuré
+- ✅ Validation des adresses wallet
+- ✅ Health checks Docker
+- ⚠️ En production : Utilisez HTTPS (Nginx + Certbot)
+
+---
+
+## 📝 Données persistées
+
+Les wallets et leurs configurations sont stockés dans `backend/wallets.json` :
+
+```json
+{
+  "wallets": [
+    {
+      "id": "1234567890",
+      "address": "0x123...",
+      "blockchain": "hyperliquid",
+      "nickname": "Trading Wallet",
+      "tags": ["Main", "Trading"],
+      "selectedTokens": ["HYPE", "USDC", "totalUSD"],
+      "createdAt": "2024-11-20T10:00:00.000Z"
+    }
+  ],
+  "availableTags": ["Main", "Trading", "DeFi"]
+}
 ```
 
 **Backup :**
 ```bash
-# Copier wallets.json
-cp backend/wallets.json backend/wallets.json.backup
-
-# Restaurer
-cp backend/wallets.json.backup backend/wallets.json
-docker-compose restart backend
-```
-
----
-
-## 🔒 Sécurité en production
-
-### 1. HTTPS avec Nginx (recommandé)
-
-Utilisez un reverse proxy comme Nginx + Certbot pour HTTPS :
-
-```nginx
-# /etc/nginx/sites-available/hyperliquid
-server {
-    listen 80;
-    server_name votre-domaine.com;
-    
-    location / {
-        proxy_pass http://localhost:80;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
-
-Puis ajoutez HTTPS avec Certbot :
-```bash
-sudo certbot --nginx -d votre-domaine.com
-```
-
-### 2. Firewall
-
-```bash
-# Linux - UFW
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw enable
-```
-
-### 3. Variables d'environnement
-
-Ne committez JAMAIS le fichier `.env` dans Git !
-
----
-
-## 📊 Monitoring
-
-### Health checks
-
-Les services ont des health checks intégrés :
-
-```bash
-# Vérifier l'état
-docker-compose ps
-
-# Backend health
-curl http://localhost:3001/health
-
-# Frontend health
-curl http://localhost/
-```
-
-### Logs
-
-```bash
-# Voir les derniers logs
-docker-compose logs --tail=100
-
-# Suivre les logs en temps réel
-docker-compose logs -f
-
-# Logs avec timestamps
-docker-compose logs -f -t
+cp backend/wallets.json backup-$(date +%Y%m%d).json
 ```
 
 ---
 
 ## 🐛 Troubleshooting
 
-### Les containers ne démarrent pas
-
+### Le backend ne démarre pas
 ```bash
-# Voir les logs d'erreur
-docker-compose logs
+# Vérifier les logs
+docker-compose logs backend
 
-# Vérifier que les ports ne sont pas déjà utilisés
-# Windows
-netstat -ano | findstr :80
-netstat -ano | findstr :3001
-
-# Linux
-sudo netstat -tulpn | grep :80
-sudo netstat -tulpn | grep :3001
+# Vérifier que le port 3001 est libre
+netstat -ano | findstr :3001  # Windows
+sudo netstat -tulpn | grep :3001  # Linux
 ```
+
+### Erreur "Failed to fetch Hyperliquid balances"
+- Vérifiez que l'adresse est au format `0x...` (42 caractères)
+- Testez l'API directement : `curl -X POST https://api.hyperliquid.xyz/info -d '{"type":"clearinghouseState","user":"0x..."}'`
 
 ### Le frontend ne communique pas avec le backend
+- Vérifiez que le backend est bien sur le port 3001
+- En dev : Le proxy Vite devrait router `/api` vers `localhost:3001`
+- En prod (Docker) : Nginx route `/api` vers le container `backend:3001`
 
-1. Vérifier que les deux containers sont sur le même réseau :
-```bash
-docker network inspect hyperliquid-dashboard_hyperliquid-network
-```
-
-2. Tester depuis le container frontend :
-```bash
-docker-compose exec frontend wget -O- http://backend:3001/health
-```
-
-### Erreur "Cannot find module"
-
-Rebuild les images :
-```bash
-docker-compose down
-docker-compose build --no-cache
-docker-compose up -d
-```
-
-### Espace disque
-
-```bash
-# Nettoyer les images inutilisées
-docker system prune -a
-
-# Voir l'espace utilisé
-docker system df
-```
+### Node.js version error
+Le projet nécessite **Node.js 20+**. Téléchargez-le sur [nodejs.org](https://nodejs.org/)
 
 ---
 
-## 🚀 Déploiement sur serveur distant
+## 🚀 Améliorations futures
 
-### Via SSH
-
-```bash
-# Sur votre machine locale
-scp -r hyperliquid-dashboard user@server:/opt/
-
-# Connectez-vous au serveur
-ssh user@server
-
-# Sur le serveur
-cd /opt/hyperliquid-dashboard
-docker-compose up -d --build
-```
-
-### Avec CI/CD (GitHub Actions exemple)
-
-```yaml
-name: Deploy
-
-on:
-  push:
-    branches: [ main ]
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      
-      - name: Deploy to server
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          script: |
-            cd /opt/hyperliquid-dashboard
-            git pull
-            docker-compose up -d --build
-```
+- [ ] Auto-refresh configurable
+- [ ] Graphiques d'évolution des prix
+- [ ] Alertes de changements de solde
+- [ ] Export CSV
+- [ ] Support de plus de blockchains (Solana, Arbitrum, etc.)
+- [ ] Mode multi-utilisateurs avec authentification
+- [ ] Dark/Light theme toggle
 
 ---
 
-## 📝 Mise à jour de l'application
+## 📄 Licence
 
-```bash
-# 1. Sauvegarder les données
-cp backend/wallets.json backup-$(date +%Y%m%d).json
-
-# 2. Pull les derniers changements
-git pull
-
-# 3. Rebuild et redémarrer
-docker-compose up -d --build
-
-# 4. Vérifier les logs
-docker-compose logs -f
-```
+MIT License - Voir [LICENSE](LICENSE) pour plus de détails
 
 ---
 
-## 🎯 Performance
+## 🤝 Contribution
 
-### Optimisations recommandées
+Les contributions sont bienvenues ! 
 
-**1. Limiter les ressources :**
-
-```yaml
-services:
-  backend:
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-```
-
-**2. Enable logging rotation :**
-
-```yaml
-services:
-  backend:
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-```
+1. Fork le projet
+2. Créez une branche (`git checkout -b feature/AmazingFeature`)
+3. Commit vos changements (`git commit -m 'Add some AmazingFeature'`)
+4. Push vers la branche (`git push origin feature/AmazingFeature`)
+5. Ouvrez une Pull Request
 
 ---
 
-## ✅ Checklist de déploiement
+## 💬 Support
 
-- [ ] Docker et Docker Compose installés
-- [ ] Fichier `.env` configuré avec la clé Alchemy
-- [ ] Ports 80 et 3001 disponibles
-- [ ] Firewall configuré (si nécessaire)
-- [ ] `docker-compose up -d --build` exécuté
-- [ ] Application accessible sur http://localhost
-- [ ] Backend health check OK : http://localhost:3001/health
-- [ ] Wallets ajoutés et balances récupérées
-- [ ] Logs vérifiés : `docker-compose logs`
+- 📧 Email : votre@email.com
+- 🐛 Issues : [GitHub Issues](https://github.com/votre-repo/issues)
+- 💬 Discord : [Lien Discord]
 
 ---
 
-🎉 **Votre Hyperliquid Dashboard est maintenant en ligne !**
+## ⭐ Remerciements
+
+- [Hyperliquid](https://hyperliquid.xyz/) pour l'API publique
+- [Alchemy](https://www.alchemy.com/) pour l'infrastructure Ethereum
+- [Lucide](https://lucide.dev/) pour les icônes
+- [Tailwind CSS](https://tailwindcss.com/) pour le framework CSS
+
+---
+
+**Fait avec ❤️ pour la communauté crypto**

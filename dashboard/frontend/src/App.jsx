@@ -5,7 +5,8 @@ import WalletWidget from './components/WalletWidget'
 import AddWalletModal from './components/AddWalletModal'
 import TagFilter from './components/TagFilter'
 
-const API_URL = 'http://localhost:3001/api'
+// En développement: localhost:3001, en production: via proxy Nginx
+const API_URL = import.meta.env.DEV ? 'http://localhost:3001/api' : '/api'
 
 function App() {
   const [wallets, setWallets] = useState([])
