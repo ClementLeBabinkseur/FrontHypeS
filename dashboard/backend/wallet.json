@@ -1,0 +1,23 @@
+{
+  "wallets": [
+    {
+      "id": "1700000001",
+      "address": "0x1234567890abcdef1234567890abcdef12345678",
+      "blockchain": "hyperliquid",
+      "nickname": "Main Trading",
+      "tags": ["Trading", "Main"],
+      "selectedTokens": ["HYPE", "USDC", "totalUSD"],
+      "createdAt": "2024-11-20T10:00:00.000Z"
+    },
+    {
+      "id": "1700000002",
+      "address": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+      "blockchain": "ethereum",
+      "nickname": "ETH Wallet",
+      "tags": ["DeFi"],
+      "selectedTokens": ["ETH", "totalUSD"],
+      "createdAt": "2024-11-20T11:00:00.000Z"
+    }
+  ],
+  "availableTags": ["Trading", "Main", "DeFi"]
+}

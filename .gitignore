@@ -26,3 +26,12 @@ Thumbs.db
 
 # Fichiers de configuration sensibles
 .env
+python/test.py
+
+# front
+node_modules/
+.env
+wallets.json
+*.log
+.DS_Store
+.vscode/

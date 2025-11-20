@@ -1,0 +1,27 @@
+# Backend Dockerfile
+FROM node:20-alpine
+
+# Créer le répertoire de travail
+WORKDIR /app
+
+# Copier package.json et package-lock.json
+COPY package*.json ./
+
+# Installer les dépendances
+RUN npm ci --only=production
+
+# Copier le code source
+COPY . .
+
+# Créer le fichier wallets.json s'il n'existe pas
+RUN touch wallets.json && echo '{"wallets":[],"availableTags":[]}' > wallets.json
+
+# Exposer le port
+EXPOSE 3001
+
+# Variables d'environnement par défaut (peuvent être overridées)
+ENV PORT=3001
+ENV NODE_ENV=production
+
+# Commande de démarrage
+CMD ["node", "server.js"]
