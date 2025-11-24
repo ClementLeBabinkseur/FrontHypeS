@@ -20,6 +20,9 @@ function WalletWidget({ wallet, balances, onRefresh, onDelete, onUpdate }) {
     if (wallet.blockchain === 'hyperliquid') {
       return `https://app.hyperliquid.xyz/explorer/address/${wallet.address}`
     }
+    if (wallet.blockchain === 'hyperevm') {
+      return `https://explorer.hyperliquid.xyz/address/${wallet.address}`
+    }
     return `https://etherscan.io/address/${wallet.address}`
   }
 
@@ -54,9 +57,11 @@ function WalletWidget({ wallet, balances, onRefresh, onDelete, onUpdate }) {
           <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-semibold ${
             wallet.blockchain === 'hyperliquid' 
               ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' 
-              : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+              : wallet.blockchain === 'hyperevm'
+              ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+              : 'bg-gray-500/20 text-gray-300 border border-gray-500/30'
           }`}>
-            {wallet.blockchain === 'hyperliquid' ? '⚡ Hyperliquid' : '🔷 Ethereum'}
+            {wallet.blockchain === 'hyperliquid' ? '⚡ Hyperliquid' : wallet.blockchain === 'hyperevm' ? '🔷 HyperEVM' : wallet.blockchain}
           </span>
         </div>
 

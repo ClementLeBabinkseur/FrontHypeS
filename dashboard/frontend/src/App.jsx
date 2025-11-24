@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { RefreshCw, Plus, Filter } from 'lucide-react'
 import WalletWidget from './components/WalletWidget'
+import WalletWidgetLine from './components/WalletWidgetLine'
 import AddWalletModal from './components/AddWalletModal'
 import TagFilter from './components/TagFilter'
 
@@ -183,9 +184,10 @@ function App() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredWallets.map(wallet => (
-              <WalletWidget
+          <div className="space-y-4">
+            {/* Line Widgets */}
+            {filteredWallets.filter(w => w.widgetType === 'line').map(wallet => (
+              <WalletWidgetLine
                 key={wallet.id}
                 wallet={wallet}
                 balances={walletBalances[wallet.id]}
@@ -194,6 +196,22 @@ function App() {
                 onUpdate={(updates) => updateWallet(wallet.id, updates)}
               />
             ))}
+
+            {/* Card Widgets Grid */}
+            {filteredWallets.filter(w => w.widgetType !== 'line').length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+                {filteredWallets.filter(w => w.widgetType !== 'line').map(wallet => (
+                  <WalletWidget
+                    key={wallet.id}
+                    wallet={wallet}
+                    balances={walletBalances[wallet.id]}
+                    onRefresh={() => refreshWallet(wallet)}
+                    onDelete={() => deleteWallet(wallet.id)}
+                    onUpdate={(updates) => updateWallet(wallet.id, updates)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -6,7 +6,8 @@ function AddWalletModal({ onClose, onAdd, existingTags }) {
     address: '',
     blockchain: 'hyperliquid',
     nickname: '',
-    tags: []
+    tags: [],
+    widgetType: 'card' // 'card' ou 'line'
   })
   const [newTag, setNewTag] = useState('')
   const [error, setError] = useState('')
@@ -106,14 +107,14 @@ function AddWalletModal({ onClose, onAdd, existingTags }) {
               </button>
               <button
                 type="button"
-                onClick={() => setFormData({ ...formData, blockchain: 'ethereum' })}
+                onClick={() => setFormData({ ...formData, blockchain: 'hyperevm' })}
                 className={`p-3 rounded-lg border-2 transition-all ${
-                  formData.blockchain === 'ethereum'
+                  formData.blockchain === 'hyperevm'
                     ? 'border-blue-500 bg-blue-500/20'
                     : 'border-slate-700 bg-slate-800/30 hover:border-slate-600'
                 }`}
               >
-                <span className="font-semibold">🔷 Ethereum</span>
+                <span className="font-semibold">🔷 HyperEVM</span>
               </button>
             </div>
           </div>
@@ -130,6 +131,52 @@ function AddWalletModal({ onClose, onAdd, existingTags }) {
               placeholder="My Trading Wallet"
               className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700 rounded-lg focus:outline-none focus:border-blue-500 transition-colors"
             />
+          </div>
+
+          {/* Widget Type */}
+          <div>
+            <label className="block text-sm font-semibold mb-2 text-slate-300">
+              Widget Display Type *
+            </label>
+            <p className="text-xs text-slate-400 mb-3">
+              Choose how you want this wallet to be displayed
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, widgetType: 'card' })}
+                className={`p-4 rounded-lg border-2 transition-all ${
+                  formData.widgetType === 'card'
+                    ? 'border-blue-500 bg-blue-500/20'
+                    : 'border-slate-700 bg-slate-800/30 hover:border-slate-600'
+                }`}
+              >
+                <div className="flex flex-col items-center gap-2">
+                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                    <span className="text-xl">▦</span>
+                  </div>
+                  <span className="font-semibold text-sm">Card</span>
+                  <span className="text-xs text-slate-400 text-center">Full details with all tokens</span>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, widgetType: 'line' })}
+                className={`p-4 rounded-lg border-2 transition-all ${
+                  formData.widgetType === 'line'
+                    ? 'border-green-500 bg-green-500/20'
+                    : 'border-slate-700 bg-slate-800/30 hover:border-slate-600'
+                }`}
+              >
+                <div className="flex flex-col items-center gap-2">
+                  <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center">
+                    <span className="text-xl">▬</span>
+                  </div>
+                  <span className="font-semibold text-sm">Line</span>
+                  <span className="text-xs text-slate-400 text-center">Compact, one token only</span>
+                </div>
+              </button>
+            </div>
           </div>
 
           {/* Tags */}

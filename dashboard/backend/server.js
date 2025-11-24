@@ -1,5 +1,3 @@
-
-// curl "http://localhost:3001/api/wallets/0x89FA38FEEc2C00d6B3CFd8e16C7948975C6C34bf/balances?blockchain=hyperliquid"
 // server.js
 const express = require('express');
 const cors = require('cors');
@@ -10,7 +8,9 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const WALLETS_FILE = path.join(__dirname, 'wallets.json');
+const WALLETS_FILE = process.env.DATA_DIR 
+  ? path.join(process.env.DATA_DIR, 'wallets.json')
+  : path.join(__dirname, 'wallets.json');
 
 // Middleware
 app.use(cors());
@@ -112,68 +112,58 @@ async function getHyperliquidBalances(address) {
   }
 }
 
-// ============ ETHEREUM VIA ALCHEMY ============
+// ============ HYPEREVM VIA RPC ============
 
-async function getEthereumBalances(address) {
+async function getHyperEVMBalances(address) {
   try {
-    const alchemyUrl = `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`;
+    const hyperevmUrl = 'https://rpc.hyperliquid.xyz/evm';
     const balances = [];
 
-    // Balance ETH native
-    const ethBalance = await axios.post(alchemyUrl, {
+    // Balance HYPE native (comme ETH sur Ethereum)
+    const hypeBalance = await axios.post(hyperevmUrl, {
       jsonrpc: '2.0',
       id: 1,
       method: 'eth_getBalance',
       params: [address, 'latest']
     });
 
-    const ethValue = parseInt(ethBalance.data.result, 16) / 1e18;
-    if (ethValue > 0) {
+    const hypeValue = parseInt(hypeBalance.data.result, 16) / 1e18; // HYPE a 18 decimales
+    if (hypeValue > 0) {
       balances.push({
-        token: 'ETH',
-        balance: ethValue.toFixed(6),
+        token: 'HYPE',
+        balance: hypeValue.toFixed(6),
         usdValue: null
       });
     }
 
-    // Token balances via Alchemy Token API
-    const tokenBalances = await axios.post(alchemyUrl, {
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'alchemy_getTokenBalances',
-      params: [address]
-    });
+    // Pour les tokens ERC-20 sur HyperEVM, on pourrait ajouter des calls spécifiques
+    // Exemple avec un contrat ERC-20 :
+    // const tokenContract = '0x...';
+    // const data = '0x70a08231' + address.slice(2).padStart(64, '0'); // balanceOf(address)
+    // const tokenBalance = await axios.post(hyperevmUrl, {
+    //   jsonrpc: '2.0',
+    //   id: 1,
+    //   method: 'eth_call',
+    //   params: [{ to: tokenContract, data }, 'latest']
+    // });
 
-    if (tokenBalances.data.result?.tokenBalances) {
-      for (const token of tokenBalances.data.result.tokenBalances) {
-        const balance = parseInt(token.tokenBalance, 16);
-        if (balance > 0) {
-          // Obtenir les métadonnées du token
-          const metadata = await axios.post(alchemyUrl, {
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'alchemy_getTokenMetadata',
-            params: [token.contractAddress]
-          });
+    // Calculer le total USD si disponible
+    const totalUSD = balances
+      .filter(b => b.usdValue !== null)
+      .reduce((sum, b) => sum + b.usdValue, 0);
 
-          const decimals = metadata.data.result?.decimals || 18;
-          const symbol = metadata.data.result?.symbol || 'UNKNOWN';
-          const readableBalance = balance / Math.pow(10, decimals);
-
-          balances.push({
-            token: symbol,
-            balance: readableBalance.toFixed(6),
-            contractAddress: token.contractAddress,
-            usdValue: null
-          });
-        }
-      }
+    if (totalUSD > 0 || hypeValue > 0) {
+      balances.push({
+        token: 'totalUSD',
+        balance: (totalUSD || hypeValue).toFixed(2),
+        usdValue: totalUSD || hypeValue
+      });
     }
 
     return balances;
   } catch (error) {
-    console.error('Ethereum API Error:', error.message);
-    throw new Error('Failed to fetch Ethereum balances');
+    console.error('HyperEVM API Error:', error.response?.data || error.message);
+    throw new Error('Failed to fetch HyperEVM balances');
   }
 }
 
@@ -192,7 +182,7 @@ app.get('/api/wallets', async (req, res) => {
 // POST ajouter un wallet
 app.post('/api/wallets', async (req, res) => {
   try {
-    const { address, blockchain, nickname, tags } = req.body;
+    const { address, blockchain, nickname, tags, widgetType } = req.body;
     
     if (!address || !blockchain) {
       return res.status(400).json({ error: 'Address and blockchain are required' });
@@ -207,6 +197,7 @@ app.post('/api/wallets', async (req, res) => {
       nickname: nickname || `Wallet ${address.slice(0, 6)}...`,
       tags: tags || [],
       selectedTokens: ['totalUSD'], // Par défaut afficher le total
+      widgetType: widgetType || 'card', // 'card' ou 'line'
       createdAt: new Date().toISOString()
     };
 
@@ -288,8 +279,8 @@ app.get('/api/wallets/:address/balances', async (req, res) => {
     
     if (blockchain === 'hyperliquid') {
       balances = await getHyperliquidBalances(address);
-    } else if (blockchain === 'ethereum') {
-      balances = await getEthereumBalances(address);
+    } else if (blockchain === 'hyperevm') {
+      balances = await getHyperEVMBalances(address);
     } else {
       return res.status(400).json({ error: 'Unsupported blockchain' });
     }
