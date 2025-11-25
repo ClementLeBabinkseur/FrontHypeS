@@ -7,19 +7,19 @@ WORKDIR /app
 # Copier package.json et package-lock.json
 COPY package*.json ./
 
-# Installer les dépendances
-RUN npm ci --only=production
+# Installer les dépendances (production uniquement)
+RUN npm ci --omit=dev
 
 # Copier le code source
 COPY . .
 
-# Créer le fichier wallets.json s'il n'existe pas
-RUN touch wallets.json && echo '{"wallets":[],"availableTags":[]}' > wallets.json
+# S'assurer que wallets.json existe
+RUN [ ! -f wallets.json ] && echo '{"wallets":[],"availableTags":[]}' > wallets.json || true
 
 # Exposer le port
 EXPOSE 3001
 
-# Variables d'environnement par défaut (peuvent être overridées)
+# Variables d'environnement par défaut
 ENV PORT=3001
 ENV NODE_ENV=production
 

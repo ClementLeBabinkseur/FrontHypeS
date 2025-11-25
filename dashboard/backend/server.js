@@ -182,36 +182,46 @@ app.get('/api/wallets', async (req, res) => {
 // POST ajouter un wallet
 app.post('/api/wallets', async (req, res) => {
   try {
-    const { address, blockchain, nickname, tags, widgetType } = req.body;
+    const { address, blockchain, nickname, walletType } = req.body;
     
-    if (!address || !blockchain) {
-      return res.status(400).json({ error: 'Address and blockchain are required' });
+    if (!address || !blockchain || !walletType) {
+      return res.status(400).json({ error: 'Address, blockchain and walletType are required' });
+    }
+
+    // Validation du walletType
+    if (!['vault', 'liquidwallet', 'executor'].includes(walletType)) {
+      return res.status(400).json({ error: 'Invalid walletType. Must be vault, liquidwallet or executor' });
     }
 
     const data = await loadWallets();
     
+    // Vérifier si vault ou liquidwallet existe déjà
+    if (walletType === 'vault') {
+      const existingVault = data.wallets.find(w => w.walletType === 'vault');
+      if (existingVault) {
+        // Supprimer l'ancien vault
+        data.wallets = data.wallets.filter(w => w.walletType !== 'vault');
+      }
+    }
+    
+    if (walletType === 'liquidwallet') {
+      const existingLiquid = data.wallets.find(w => w.walletType === 'liquidwallet');
+      if (existingLiquid) {
+        // Supprimer l'ancien liquidwallet
+        data.wallets = data.wallets.filter(w => w.walletType !== 'liquidwallet');
+      }
+    }
+
     const newWallet = {
       id: Date.now().toString(),
       address,
       blockchain,
       nickname: nickname || `Wallet ${address.slice(0, 6)}...`,
-      tags: tags || [],
-      selectedTokens: ['totalUSD'], // Par défaut afficher le total
-      widgetType: widgetType || 'card', // 'card' ou 'line'
+      walletType, // 'vault', 'liquidwallet', 'executor'
       createdAt: new Date().toISOString()
     };
 
     data.wallets.push(newWallet);
-    
-    // Ajouter les nouveaux tags à la liste globale
-    if (tags) {
-      tags.forEach(tag => {
-        if (!data.availableTags.includes(tag)) {
-          data.availableTags.push(tag);
-        }
-      });
-    }
-
     await saveWallets(data);
     res.json(newWallet);
   } catch (error) {
