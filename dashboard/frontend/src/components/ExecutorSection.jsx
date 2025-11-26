@@ -74,16 +74,7 @@ function ExecutorSection({ wallets, balances, onRefresh, onDelete }) {
                     )}
                   </div>
                 )}
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => onDelete(wallet.id)}
-                    className="p-2 hover:bg-red-500/20 rounded-lg transition-colors"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-4 h-4 text-red-400" />
-                  </button>
-                </div>
+                
               </div>
             </div>
           )
