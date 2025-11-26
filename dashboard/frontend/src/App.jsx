@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { Plus, LayoutDashboard, Activity } from 'lucide-react'
+import { Plus, LayoutDashboard, Activity, RefreshCw } from 'lucide-react'
 import VaultSection from './components/VaultSection'
 import LiquidWalletSection from './components/LiquidWalletSection'
 import ExecutorSection from './components/ExecutorSection'
@@ -47,10 +47,16 @@ function App() {
   // Rafraîchir tous les wallets
   const refreshAllWallets = async () => {
     setIsRefreshing(true)
-    for (const wallet of wallets) {
-      await refreshWallet(wallet)
+    console.log("Wallets: ",wallets)
+    try {
+      for (const wallet of wallets) {
+        await refreshWallet(wallet)
+      }
+    } catch (error) {
+      console.error('Error refreshing wallets:', error)
+    } finally {
+      setIsRefreshing(false)
     }
-    setIsRefreshing(false)
   }
 
   // Ajouter un wallet
@@ -106,15 +112,26 @@ function App() {
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-7xl mx-auto p-8">
-          {/* Header avec bouton + */}
+          {/* Header avec boutons Refresh et Add */}
           <div className="flex justify-between items-center mb-8">
             <h1 className="text-4xl font-bold text-white">VAULT</h1>
-            <button
-              onClick={() => setIsAddModalOpen(true)}
-              className="w-12 h-12 border-2 border-white/20 hover:border-white/40 rounded-lg flex items-center justify-center transition-colors"
-            >
-              <Plus className="w-6 h-6 text-white" />
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={refreshAllWallets}
+                disabled={isRefreshing}
+                className="w-12 h-12 border-2 border-white/20 hover:border-white/40 rounded-lg flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Refresh all wallets"
+              >
+                <RefreshCw className={`w-6 h-6 text-white ${isRefreshing ? 'animate-spin' : ''}`} />
+              </button>
+              <button
+                onClick={() => setIsAddModalOpen(true)}
+                className="w-12 h-12 border-2 border-white/20 hover:border-white/40 rounded-lg flex items-center justify-center transition-colors"
+                title="Add wallet"
+              >
+                <Plus className="w-6 h-6 text-white" />
+              </button>
+            </div>
           </div>
 
           {/* Vault Section */}
@@ -122,7 +139,6 @@ function App() {
             <VaultSection
               wallet={vaultWallet}
               balances={walletBalances[vaultWallet.id]}
-              onRefresh={() => refreshWallet(vaultWallet)}
               onDelete={() => deleteWallet(vaultWallet.id)}
             />
           ) : (
@@ -142,7 +158,6 @@ function App() {
             <LiquidWalletSection
               wallet={liquidWallet}
               balances={walletBalances[liquidWallet.id]}
-              onRefresh={() => refreshWallet(liquidWallet)}
               onDelete={() => deleteWallet(liquidWallet.id)}
             />
           )}

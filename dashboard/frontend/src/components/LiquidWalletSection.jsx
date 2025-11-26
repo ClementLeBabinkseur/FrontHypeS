@@ -1,6 +1,6 @@
-function LiquidWalletSection({ wallet, balances, onRefresh }) {
+function LiquidWalletSection({ wallet, balances }) {
   // Filtrer pour les 4 tokens requis
-  const displayTokens = ['HYPE', 'ETH', 'BTC', 'USDT']
+  const displayTokens = ['HYPE', 'ETH', 'BTC', 'USDC']
   const tokenBalances = balances?.balances?.filter(b => 
     displayTokens.includes(b.token)
   ) || []
@@ -10,8 +10,10 @@ function LiquidWalletSection({ wallet, balances, onRefresh }) {
     'HYPE': '🟡',
     'ETH': '⚪',
     'BTC': '🟠',
-    'USDT': '🟢'
+    'USDC': '🟢'
   }
+  
+  console.log("Token recu: ",balances)
 
   return (
     <div className="mt-8 bg-[#0a0a0a] rounded-lg p-6">
@@ -27,12 +29,7 @@ function LiquidWalletSection({ wallet, balances, onRefresh }) {
         {/* Tokens */}
         {!balances ? (
           <div className="py-8 text-center text-gray-500">
-            <button
-              onClick={onRefresh}
-              className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
-            >
-              Load balances
-            </button>
+            Click the refresh button above to load balances
           </div>
         ) : tokenBalances.length > 0 ? (
           tokenBalances.map((token, idx) => (

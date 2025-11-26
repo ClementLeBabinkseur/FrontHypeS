@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts'
 
-function VaultSection({ wallet, balances, onRefresh }) {
+function VaultSection({ wallet, balances }) {
   const [period, setPeriod] = useState('1W')
   const [chartData, setChartData] = useState([])
 
@@ -146,12 +146,7 @@ function VaultSection({ wallet, balances, onRefresh }) {
           {/* Tokens */}
           {!balances ? (
             <div className="py-8 text-center text-gray-500">
-              <button
-                onClick={onRefresh}
-                className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
-              >
-                Load balances
-              </button>
+              Click the refresh button above to load balances
             </div>
           ) : tokenBalances.length > 0 ? (
             tokenBalances.map((token, idx) => (

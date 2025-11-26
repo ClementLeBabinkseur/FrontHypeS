@@ -25,7 +25,15 @@ async function loadWallets() {
     return JSON.parse(data);
   } catch (error) {
     // Si le fichier n'existe pas, créer une structure vide
-    const initialData = { wallets: [], availableTags: [] };
+    const initialData = { 
+      wallets: [], 
+      availableTags: [],
+      hyperevmTokenContracts: {
+        WETH: '',
+        WBTC: '',
+        USDT: ''
+      }
+    };
     await fs.writeFile(WALLETS_FILE, JSON.stringify(initialData, null, 2));
     return initialData;
   }
@@ -114,10 +122,76 @@ async function getHyperliquidBalances(address) {
 
 // ============ HYPEREVM VIA RPC ============
 
+async function getERC20Balance(contractAddress, walletAddress, hyperevmUrl) {
+  try {
+    // 1. Get decimals
+    const decimalsData = '0x313ce567'; // decimals()
+    const decimalsResponse = await axios.post(hyperevmUrl, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'eth_call',
+      params: [{ to: contractAddress, data: decimalsData }, 'latest']
+    });
+    
+    const decimals = decimalsResponse.data.result ? parseInt(decimalsResponse.data.result, 16) : 18;
+    
+    // 2. Get symbol
+    const symbolData = '0x95d89b41'; // symbol()
+    const symbolResponse = await axios.post(hyperevmUrl, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'eth_call',
+      params: [{ to: contractAddress, data: symbolData }, 'latest']
+    });
+    
+    let symbol = 'UNKNOWN';
+    if (symbolResponse.data.result && symbolResponse.data.result !== '0x') {
+      // Decode hex string
+      const hex = symbolResponse.data.result.slice(2);
+      const bytes = [];
+      for (let i = 0; i < hex.length; i += 2) {
+        bytes.push(parseInt(hex.substr(i, 2), 16));
+      }
+      // Skip first 64 bytes (offset + length), then decode string
+      const textBytes = bytes.slice(64).filter(b => b !== 0);
+      symbol = String.fromCharCode(...textBytes);
+    }
+    
+    // 3. Get balance
+    const balanceData = '0x70a08231' + walletAddress.slice(2).padStart(64, '0'); // balanceOf(address)
+    const balanceResponse = await axios.post(hyperevmUrl, {
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'eth_call',
+      params: [{ to: contractAddress, data: balanceData }, 'latest']
+    });
+
+    if (balanceResponse.data.result) {
+      const balance = parseInt(balanceResponse.data.result, 16);
+      const readableBalance = balance / Math.pow(10, decimals);
+      
+      console.log(`💰 ${symbol}: ${readableBalance} (decimals: ${decimals})`);
+      
+      return {
+        symbol,
+        balance: readableBalance,
+        decimals
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    console.error(`❌ Error fetching ERC20 balance for ${contractAddress}:`, error.message);
+    return null;
+  }
+}
+
 async function getHyperEVMBalances(address) {
   try {
     const hyperevmUrl = 'https://rpc.hyperliquid.xyz/evm';
     const balances = [];
+
+    console.log(`\n🔍 Fetching balances for wallet: ${address}`);
 
     // Balance HYPE native (comme ETH sur Ethereum)
     const hypeBalance = await axios.post(hyperevmUrl, {
@@ -128,7 +202,8 @@ async function getHyperEVMBalances(address) {
     });
 
     const hypeValue = parseInt(hypeBalance.data.result, 16) / 1e18; // HYPE a 18 decimales
-    if (hypeValue > 0) {
+    if (hypeValue > 0.000001) {
+      console.log(`💰 HYPE (native): ${hypeValue}`);
       balances.push({
         token: 'HYPE',
         balance: hypeValue.toFixed(6),
@@ -136,27 +211,52 @@ async function getHyperEVMBalances(address) {
       });
     }
 
-    // Pour les tokens ERC-20 sur HyperEVM, on pourrait ajouter des calls spécifiques
-    // Exemple avec un contrat ERC-20 :
-    // const tokenContract = '0x...';
-    // const data = '0x70a08231' + address.slice(2).padStart(64, '0'); // balanceOf(address)
-    // const tokenBalance = await axios.post(hyperevmUrl, {
-    //   jsonrpc: '2.0',
-    //   id: 1,
-    //   method: 'eth_call',
-    //   params: [{ to: tokenContract, data }, 'latest']
-    // });
+    // Adresses hardcodées des tokens ERC-20 sur HyperEVM
+    const TOKEN_CONTRACTS = [
+      { address: '0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb', expectedSymbol: 'ETH' },
+      { address: '0x9FDBdA0A5e284c32744D2f17Ee5c74B284993463', expectedSymbol: 'BTC' },
+      { address: '0xbe6727b535545c67d5caa73dea54865b92cf7907', expectedSymbol: 'USDT' }
+    ];
 
-    // Calculer le total USD si disponible
+    // Mapping des symboles pour normaliser
+    const SYMBOL_MAPPING = {
+      'UETH': 'ETH',
+      'WETH': 'ETH',
+      'UBTC': 'BTC',
+      'WBTC': 'BTC',
+      'USDâ®0': 'USDT',
+      'USDâ®0': 'USDT',
+      'USDT': 'USDT',
+      'USDC' : 'USDC', 
+    };
+
+    // Récupérer les balances de chaque token ERC-20
+    for (const token of TOKEN_CONTRACTS) {
+      const result = await getERC20Balance(token.address, address, hyperevmUrl);
+      if (result && result.balance > 0.000001) {
+        // Normaliser le symbole
+        const normalizedSymbol = SYMBOL_MAPPING[result.symbol] || result.symbol;
+        
+        balances.push({
+          token: normalizedSymbol,
+          balance: result.balance.toFixed(6),
+          usdValue: null
+        });
+      }
+    }
+
+    console.log(`✅ Total tokens found: ${balances.length}\n`);
+
+    // Calculer le total USD si disponible (pour l'instant on ne l'a pas)
     const totalUSD = balances
       .filter(b => b.usdValue !== null)
       .reduce((sum, b) => sum + b.usdValue, 0);
 
-    if (totalUSD > 0 || hypeValue > 0) {
+    if (totalUSD > 0) {
       balances.push({
         token: 'totalUSD',
-        balance: (totalUSD || hypeValue).toFixed(2),
-        usdValue: totalUSD || hypeValue
+        balance: totalUSD.toFixed(2),
+        usdValue: totalUSD
       });
     }
 
@@ -331,6 +431,47 @@ app.post('/api/tags', async (req, res) => {
 
     await saveWallets(data);
     res.json({ availableTags: data.availableTags });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET les contrats de tokens ERC-20 configurés
+app.get('/api/token-contracts', async (req, res) => {
+  try {
+    const data = await loadWallets();
+    res.json(data.hyperevmTokenContracts || { WETH: '', WBTC: '', USDT: '' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST/PUT sauvegarder les contrats de tokens ERC-20
+app.post('/api/token-contracts', async (req, res) => {
+  try {
+    const { WETH, WBTC, USDT } = req.body;
+    
+    // Validation des adresses (si fournies)
+    const addressRegex = /^0x[a-fA-F0-9]{40}$/;
+    if (WETH && !addressRegex.test(WETH)) {
+      return res.status(400).json({ error: 'Invalid WETH address format' });
+    }
+    if (WBTC && !addressRegex.test(WBTC)) {
+      return res.status(400).json({ error: 'Invalid WBTC address format' });
+    }
+    if (USDT && !addressRegex.test(USDT)) {
+      return res.status(400).json({ error: 'Invalid USDT address format' });
+    }
+
+    const data = await loadWallets();
+    data.hyperevmTokenContracts = {
+      WETH: WETH || '',
+      WBTC: WBTC || '',
+      USDT: USDT || ''
+    };
+
+    await saveWallets(data);
+    res.json(data.hyperevmTokenContracts);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

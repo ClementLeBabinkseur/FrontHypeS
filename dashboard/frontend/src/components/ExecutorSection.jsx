@@ -54,13 +54,11 @@ function ExecutorSection({ wallets, balances, onRefresh, onDelete }) {
               {/* Right: Balance + Actions */}
               <div className="flex items-center gap-4">
                 {!hypeBalance ? (
-                  <button
-                    onClick={() => handleRefresh(wallet)}
-                    disabled={isRefreshing}
+                  <div
                     className="text-sm text-gray-500 hover:text-gray-300 transition-colors"
                   >
                     Load balance
-                  </button>
+                  </div>
                 ) : (
                   <div className="text-right">
                     <div className="text-white font-medium">
@@ -78,14 +76,6 @@ function ExecutorSection({ wallets, balances, onRefresh, onDelete }) {
                 )}
 
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => handleRefresh(wallet)}
-                    disabled={isRefreshing}
-                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                    title="Refresh"
-                  >
-                    <RefreshCw className={`w-4 h-4 text-gray-400 ${isRefreshing ? 'animate-spin' : ''}`} />
-                  </button>
                   <button
                     onClick={() => onDelete(wallet.id)}
                     className="p-2 hover:bg-red-500/20 rounded-lg transition-colors"
