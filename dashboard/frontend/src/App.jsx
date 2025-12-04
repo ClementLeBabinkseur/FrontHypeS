@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { Plus, LayoutDashboard, Activity, RefreshCw, Wallet } from 'lucide-react'
-import VaultSection from './components/VaultSection'
-import LiquidWalletSection from './components/LiquidWalletSection'
+import VaultSection from './components/VaultSection_Unified'
 import ExecutorSection from './components/ExecutorSection'
-import AddWalletModal from './components/AddWalletModal'
+import AddWalletModal from './components/AddWalletModal_Unified'
 import WalletsManagement from './components/WalletsManagement'
 
 // En développement: localhost:3001, en production: via proxy Nginx
@@ -13,6 +12,7 @@ const API_URL = import.meta.env.DEV ? 'http://localhost:3001/api' : '/api'
 function App() {
   const [wallets, setWallets] = useState([])
   const [walletBalances, setWalletBalances] = useState({})
+  const [vaultCombinedBalances, setVaultCombinedBalances] = useState(null)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [currentView, setCurrentView] = useState('dashboard') // 'dashboard' or 'wallets'
@@ -46,12 +46,31 @@ function App() {
     }
   }
 
+  // Rafraîchir les balances combinées du vault
+  const refreshVaultCombined = async (vaultWallet) => {
+    try {
+      console.log('Fetching combined balances for vault:', vaultWallet.id)
+      const response = await axios.get(`${API_URL}/wallets/${vaultWallet.id}/combined-balances`)
+      console.log('Combined balances received:', response.data)
+      setVaultCombinedBalances(response.data)
+    } catch (error) {
+      console.error(`Error fetching combined balances:`, error)
+    }
+  }
+
   // Rafraîchir tous les wallets
   const refreshAllWallets = async () => {
     setIsRefreshing(true)
-    console.log("Wallets: ",wallets)
     try {
-      for (const wallet of wallets) {
+      // Rafraîchir le vault avec balances combinées
+      const vault = wallets.find(w => w.walletType === 'vault')
+      if (vault) {
+        await refreshVaultCombined(vault)
+      }
+      
+      // Rafraîchir les executors
+      const executors = wallets.filter(w => w.walletType === 'executor')
+      for (const wallet of executors) {
         await refreshWallet(wallet)
       }
     } catch (error) {
@@ -101,7 +120,6 @@ function App() {
 
   // Récupérer les wallets par type
   const vaultWallet = wallets.find(w => w.walletType === 'vault')
-  const liquidWallet = wallets.find(w => w.walletType === 'liquidwallet')
   const executorWallets = wallets.filter(w => w.walletType === 'executor')
 
   return (
@@ -185,7 +203,7 @@ function App() {
               {vaultWallet ? (
                 <VaultSection
                   wallet={vaultWallet}
-                  balances={walletBalances[vaultWallet.id]}
+                  combinedBalances={vaultCombinedBalances}
                   onDelete={() => deleteWallet(vaultWallet.id)}
                 />
               ) : (
@@ -198,15 +216,6 @@ function App() {
                     Add Vault Wallet
                   </button>
                 </div>
-              )}
-
-              {/* LiquidWallet Section */}
-              {liquidWallet && (
-                <LiquidWalletSection
-                  wallet={liquidWallet}
-                  balances={walletBalances[liquidWallet.id]}
-                  onDelete={() => deleteWallet(liquidWallet.id)}
-                />
               )}
 
               {/* Executor Section */}
@@ -247,7 +256,6 @@ function App() {
           onClose={() => setIsAddModalOpen(false)}
           onAdd={addWallet}
           existingVault={!!vaultWallet}
-          existingLiquidWallet={!!liquidWallet}
         />
       )}
     </div>

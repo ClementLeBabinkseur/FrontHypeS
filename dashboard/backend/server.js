@@ -227,7 +227,7 @@ async function getHyperEVMBalances(address) {
       'USDâ®0': 'USDT',
       'USDâ®0': 'USDT',
       'USDT': 'USDT',
-      'USDC' : 'USDC', 
+      'USDC' : 'USDT', //#TODO à differencier
     };
 
     // Récupérer les balances de chaque token ERC-20
@@ -282,20 +282,20 @@ app.get('/api/wallets', async (req, res) => {
 // POST ajouter un wallet
 app.post('/api/wallets', async (req, res) => {
   try {
-    const { address, blockchain, nickname, walletType } = req.body;
+    const { address, addresses, blockchain, nickname, walletType } = req.body;
     
-    if (!address || !blockchain || !walletType) {
-      return res.status(400).json({ error: 'Address, blockchain and walletType are required' });
+    if (!walletType) {
+      return res.status(400).json({ error: 'walletType is required' });
     }
 
     // Validation du walletType
-    if (!['vault', 'liquidwallet', 'executor'].includes(walletType)) {
-      return res.status(400).json({ error: 'Invalid walletType. Must be vault, liquidwallet or executor' });
+    if (!['vault', 'executor'].includes(walletType)) {
+      return res.status(400).json({ error: 'Invalid walletType. Must be vault or executor' });
     }
 
     const data = await loadWallets();
     
-    // Vérifier si vault ou liquidwallet existe déjà
+    // Vérifier si vault existe déjà
     if (walletType === 'vault') {
       const existingVault = data.wallets.find(w => w.walletType === 'vault');
       if (existingVault) {
@@ -303,23 +303,40 @@ app.post('/api/wallets', async (req, res) => {
         data.wallets = data.wallets.filter(w => w.walletType !== 'vault');
       }
     }
-    
-    if (walletType === 'liquidwallet') {
-      const existingLiquid = data.wallets.find(w => w.walletType === 'liquidwallet');
-      if (existingLiquid) {
-        // Supprimer l'ancien liquidwallet
-        data.wallets = data.wallets.filter(w => w.walletType !== 'liquidwallet');
-      }
-    }
 
-    const newWallet = {
-      id: Date.now().toString(),
-      address,
-      blockchain,
-      nickname: nickname || `Wallet ${address.slice(0, 6)}...`,
-      walletType, // 'vault', 'liquidwallet', 'executor'
-      createdAt: new Date().toISOString()
-    };
+    let newWallet;
+
+    if (walletType === 'vault') {
+      // Vault avec deux adresses
+      if (!addresses || !addresses.hyperliquid || !addresses.hyperevm) {
+        return res.status(400).json({ error: 'Vault requires both hyperliquid and hyperevm addresses' });
+      }
+
+      newWallet = {
+        id: Date.now().toString(),
+        walletType: 'vault',
+        nickname: nickname || 'Vault',
+        addresses: {
+          hyperliquid: addresses.hyperliquid,
+          hyperevm: addresses.hyperevm
+        },
+        createdAt: new Date().toISOString()
+      };
+    } else {
+      // Executor avec une seule adresse
+      if (!address || !blockchain) {
+        return res.status(400).json({ error: 'Executor requires address and blockchain' });
+      }
+
+      newWallet = {
+        id: Date.now().toString(),
+        address,
+        blockchain,
+        nickname: nickname || `Executor ${address.slice(0, 6)}...`,
+        walletType: 'executor',
+        createdAt: new Date().toISOString()
+      };
+    }
 
     data.wallets.push(newWallet);
     await saveWallets(data);
@@ -408,6 +425,67 @@ app.get('/api/wallets/:address/balances', async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET balances combinées d'un vault (Hyperliquid + HyperEVM)
+app.get('/api/wallets/:id/combined-balances', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const data = await loadWallets();
+    const wallet = data.wallets.find(w => w.id === id);
+    
+    if (!wallet || wallet.walletType !== 'vault') {
+      return res.status(404).json({ error: 'Vault not found' });
+    }
+
+    // Vérifier que le wallet a les deux adresses
+    if (!wallet.addresses || !wallet.addresses.hyperliquid || !wallet.addresses.hyperevm) {
+      return res.status(400).json({ error: 'Vault must have both Hyperliquid and HyperEVM addresses' });
+    }
+    
+    console.log(`\n🔄 Fetching combined balances for vault ${wallet.nickname || wallet.id}`);
+    console.log(`   HL address: ${wallet.addresses.hyperliquid}`);
+    console.log(`   EVM address: ${wallet.addresses.hyperevm}`);
+    
+    // Récupérer les balances des deux blockchains
+    const hlBalances = await getHyperliquidBalances(wallet.addresses.hyperliquid);
+    const evmBalances = await getHyperEVMBalances(wallet.addresses.hyperevm);
+    
+    console.log(`   HL tokens found: ${hlBalances.length}`);
+    console.log(`   EVM tokens found: ${evmBalances.length}`);
+    
+    // Combiner les balances par token
+    const combined = {};
+    const tokens = ['HYPE', 'ETH', 'BTC', 'USDT'];
+    
+    for (const token of tokens) {
+      const hlBalance = hlBalances.find(b => b.token === token);
+      const evmBalance = evmBalances.find(b => b.token === token);
+      
+      const hlValue = hlBalance ? parseFloat(hlBalance.balance) : 0;
+      const evmValue = evmBalance ? parseFloat(evmBalance.balance) : 0;
+      
+      combined[token] = {
+        hyperliquid: hlValue,
+        hyperevm: evmValue,
+        total: hlValue + evmValue
+      };
+      
+      console.log(`   ${token}: HL=${hlValue.toFixed(6)} + EVM=${evmValue.toFixed(6)} = ${combined[token].total.toFixed(6)}`);
+    }
+    
+    console.log(`✅ Combined balances calculated\n`);
+    
+    res.json({
+      walletId: id,
+      nickname: wallet.nickname,
+      balances: combined,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error fetching combined balances:', error);
     res.status(500).json({ error: error.message });
   }
 });
