@@ -16,6 +16,74 @@ const WALLETS_FILE = process.env.DATA_DIR
 app.use(cors());
 app.use(express.json());
 
+// ============ PRICE CACHE ============
+
+let priceCache = {
+  prices: null,
+  lastUpdate: null,
+  TTL: 5 * 60 * 1000 // 5 minutes
+};
+
+// Mapping des symboles vers IDs CoinGecko
+const COINGECKO_IDS = {
+  'HYPE': 'hyperliquid',
+  'ETH': 'ethereum',
+  'BTC': 'bitcoin',
+  'USDT': 'tether',
+  'USDC': 'tether'
+};
+
+// Récupérer les prix depuis CoinGecko
+async function fetchPricesFromCoinGecko() {
+  try {
+    const ids = Object.values(COINGECKO_IDS).join(',');
+    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`;
+    
+    console.log('🔍 Fetching prices from CoinGecko...');
+    const response = await axios.get(url);
+    
+    // Mapper les IDs CoinGecko vers nos symboles
+    const prices = {};
+    for (const [symbol, coinGeckoId] of Object.entries(COINGECKO_IDS)) {
+      if (response.data[coinGeckoId]) {
+        prices[symbol] = response.data[coinGeckoId].usd;
+      }
+    }
+    
+    console.log('💰 Prices fetched:', prices);
+    return prices;
+  } catch (error) {
+    console.error('❌ Error fetching prices from CoinGecko:', error.message);
+    
+    // Fallback prices en cas d'erreur
+    return {
+      'HYPE': 25.0,
+      'ETH': 2300.0,
+      'BTC': 43000.0,
+      'USDT': 1.0,
+      'USDC': 1.0
+    };
+  }
+}
+
+// Récupérer les prix (avec cache)
+async function getPrices(forceRefresh = false) {
+  const now = Date.now();
+  
+  // Retourner le cache si valide et pas de force refresh
+  if (!forceRefresh && priceCache.prices && (now - priceCache.lastUpdate) < priceCache.TTL) {
+    console.log('📦 Using cached prices');
+    return priceCache.prices;
+  }
+  
+  // Sinon, fetch nouveaux prix
+  const prices = await fetchPricesFromCoinGecko();
+  priceCache.prices = prices;
+  priceCache.lastUpdate = now;
+  
+  return prices;
+}
+
 // ============ UTILITY FUNCTIONS ============
 
 // Charger les wallets depuis le fichier JSON
@@ -31,8 +99,14 @@ async function loadWallets() {
       hyperevmTokenContracts: {
         WETH: '',
         WBTC: '',
-        USDT: ''
-      }
+        USDT: '',
+        USDC: '',
+      },
+      vaultSettings: {
+        initialInvestmentUSD: 5000,
+        initialDate: new Date().toISOString()
+      },
+      pnlHistory: []
     };
     await fs.writeFile(WALLETS_FILE, JSON.stringify(initialData, null, 2));
     return initialData;
@@ -227,7 +301,7 @@ async function getHyperEVMBalances(address) {
       'USDâ®0': 'USDT',
       'USDâ®0': 'USDT',
       'USDT': 'USDT',
-      'USDC' : 'USDT', //#TODO à differencier
+      'USDC' : 'USDC', //#TODO à differencier
     };
 
     // Récupérer les balances de chaque token ERC-20
@@ -458,7 +532,7 @@ app.get('/api/wallets/:id/combined-balances', async (req, res) => {
     
     // Combiner les balances par token
     const combined = {};
-    const tokens = ['HYPE', 'ETH', 'BTC', 'USDT'];
+    const tokens = ['HYPE', 'ETH', 'BTC', 'USDT','USDC'];
     
     for (const token of tokens) {
       const hlBalance = hlBalances.find(b => b.token === token);
@@ -550,6 +624,180 @@ app.post('/api/token-contracts', async (req, res) => {
 
     await saveWallets(data);
     res.json(data.hyperevmTokenContracts);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET les prix actuels
+app.get('/api/prices', async (req, res) => {
+  try {
+    const forceRefresh = req.query.refresh === 'true';
+    const prices = await getPrices(forceRefresh);
+    
+    res.json({
+      prices,
+      cachedAt: new Date(priceCache.lastUpdate).toISOString(),
+      ttl: priceCache.TTL / 1000 // en secondes
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET les settings du vault
+app.get('/api/vault/settings', async (req, res) => {
+  try {
+    const data = await loadWallets();
+    
+    if (!data.vaultSettings) {
+      data.vaultSettings = {
+        initialInvestmentUSD: 5000,
+        initialDate: new Date().toISOString()
+      };
+      await saveWallets(data);
+    }
+    
+    res.json(data.vaultSettings);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST mettre à jour les settings du vault
+app.post('/api/vault/settings', async (req, res) => {
+  try {
+    const { initialInvestmentUSD, initialDate } = req.body;
+    
+    if (!initialInvestmentUSD || initialInvestmentUSD <= 0) {
+      return res.status(400).json({ error: 'Invalid initial investment' });
+    }
+    
+    const data = await loadWallets();
+    data.vaultSettings = {
+      initialInvestmentUSD: parseFloat(initialInvestmentUSD),
+      initialDate: initialDate || data.vaultSettings?.initialDate || new Date().toISOString()
+    };
+    
+    await saveWallets(data);
+    res.json(data.vaultSettings);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET calculer le PNL du vault
+app.get('/api/vault/pnl', async (req, res) => {
+  try {
+    const data = await loadWallets();
+    const vault = data.wallets.find(w => w.walletType === 'vault');
+    
+    if (!vault) {
+      return res.status(404).json({ error: 'Vault not found' });
+    }
+    
+    if (!vault.addresses || !vault.addresses.hyperliquid || !vault.addresses.hyperevm) {
+      return res.status(400).json({ error: 'Vault must have both addresses' });
+    }
+    
+    // Récupérer les balances combinées
+    const hlBalances = await getHyperliquidBalances(vault.addresses.hyperliquid);
+    const evmBalances = await getHyperEVMBalances(vault.addresses.hyperevm);
+    
+    const tokens = ['HYPE', 'ETH', 'BTC', 'USDT','USDC'];
+    const combined = {};
+    
+    for (const token of tokens) {
+      const hlBalance = hlBalances.find(b => b.token === token);
+      const evmBalance = evmBalances.find(b => b.token === token);
+      
+      const hlValue = hlBalance ? parseFloat(hlBalance.balance) : 0;
+      const evmValue = evmBalance ? parseFloat(evmBalance.balance) : 0;
+      
+      combined[token] = hlValue + evmValue;
+    }
+    
+    // Récupérer les prix
+    const forceRefresh = req.query.refresh === 'true';
+    const prices = await getPrices(forceRefresh);
+    
+    // Calculer la valeur totale en USD
+    let totalUSD = 0;
+    const breakdown = {};
+    
+    for (const token of tokens) {
+      const amount = combined[token] || 0;
+      const price = prices[token] || 0;
+      const value = amount * price;
+      
+      breakdown[token] = {
+        amount,
+        price,
+        value
+      };
+      
+      totalUSD += value;
+    }
+    
+    // Récupérer les settings
+    const settings = data.vaultSettings || { initialInvestmentUSD: 5000 };
+    
+    // Calculer le PNL
+    const pnlAmount = totalUSD - settings.initialInvestmentUSD;
+    const pnlPercent = settings.initialInvestmentUSD > 0 
+      ? (pnlAmount / settings.initialInvestmentUSD) * 100 
+      : 0;
+    
+    // Sauvegarder un snapshot dans l'historique
+    if (!data.pnlHistory) {
+      data.pnlHistory = [];
+    }
+    
+    const snapshot = {
+      timestamp: new Date().toISOString(),
+      totalUSD,
+      pnlAmount,
+      pnlPercent,
+      balances: combined,
+      prices
+    };
+    
+    // Garder seulement les 1000 derniers snapshots
+    data.pnlHistory.push(snapshot);
+    if (data.pnlHistory.length > 1000) {
+      data.pnlHistory = data.pnlHistory.slice(-1000);
+    }
+    
+    await saveWallets(data);
+    
+    res.json({
+      totalUSD,
+      initialInvestmentUSD: settings.initialInvestmentUSD,
+      pnlAmount,
+      pnlPercent,
+      breakdown,
+      prices,
+      timestamp: snapshot.timestamp
+    });
+  } catch (error) {
+    console.error('Error calculating PNL:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET l'historique du PNL
+app.get('/api/vault/pnl-history', async (req, res) => {
+  try {
+    const data = await loadWallets();
+    const limit = parseInt(req.query.limit) || 100;
+    
+    const history = data.pnlHistory || [];
+    const limitedHistory = history.slice(-limit);
+    
+    res.json({
+      history: limitedHistory,
+      total: history.length
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

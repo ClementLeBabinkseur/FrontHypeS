@@ -1,20 +1,16 @@
 import { useState, useEffect } from 'react'
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts'
+import { Settings } from 'lucide-react'
+import VaultSettingsModal from './VaultSettingsModal'
 
-function VaultSection({ wallet, combinedBalances, onRefresh }) {
+function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSettings }) {
   const [period, setPeriod] = useState('1W')
   const [chartData, setChartData] = useState([])
-
-  const BASE_PNL = 5000 // Base de $5,000
-
-  // Calculer le total en HYPE (pour le PNL)
-  const totalHype = combinedBalances?.balances?.HYPE?.total || 0
-  const pnlAmount = totalHype - BASE_PNL
-  const pnlPercent = BASE_PNL > 0 ? (pnlAmount / BASE_PNL) * 100 : 0
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
 
   // Générer les données du graphique
   useEffect(() => {
-    if (!combinedBalances) return
+    if (!pnlData) return
 
     const periods = {
       '1D': 24,
@@ -28,29 +24,45 @@ function VaultSection({ wallet, combinedBalances, onRefresh }) {
     const points = periods[period] || 7
     const data = Array.from({ length: points }, (_, i) => ({
       time: i,
-      value: totalHype || 0
+      value: pnlData.totalUSD || 0
     }))
 
     setChartData(data)
-  }, [period, combinedBalances, totalHype])
+  }, [period, pnlData])
 
   // Emojis pour les tokens
   const tokenEmojis = {
-    'HYPE': '🟡',
+    'HYPE': '🟢',
     'ETH': '⚪',
-    'BTC': '🟠',
-    'USDT': '🟢'
+    'BTC': '🟡',
+    'USDT': '🟠',
+    'USDC': '🟠'
   }
 
   // Tokens à afficher
-  const displayTokens = ['HYPE', 'ETH', 'BTC', 'USDT']
+  const displayTokens = ['HYPE', 'ETH', 'BTC', 'USDT','USDC']
+
+  const totalUSD = pnlData?.totalUSD || 0
+  const pnlAmount = pnlData?.pnlAmount || 0
+  const pnlPercent = pnlData?.pnlPercent || 0
 
   return (
     <div className="space-y-6">
       {/* Total + PNL */}
       <div>
-        <div className="text-5xl font-bold text-white mb-6">
-          {totalHype.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} HYPE
+        <div className="flex items-center justify-between mb-6">
+          <div className="text-5xl font-bold text-white">
+            ${totalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+          
+          {/* Settings Button */}
+          <button
+            onClick={() => setShowSettingsModal(true)}
+            className="p-3 bg-white/10 hover:bg-white/20 rounded-lg transition-colors group"
+            title="Vault Settings"
+          >
+            <Settings className="w-6 h-6 text-gray-400 group-hover:text-white transition-colors" />
+          </button>
         </div>
 
         {/* PNL Box */}
@@ -61,10 +73,17 @@ function VaultSection({ wallet, combinedBalances, onRefresh }) {
               {pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%
             </div>
             <div className={`text-sm ${pnlAmount >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-              {pnlAmount >= 0 ? '+' : ''}{pnlAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} HYPE
+              {pnlAmount >= 0 ? '+' : ''}${Math.abs(pnlAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
         </div>
+
+        {/* Price Info */}
+        {pnlData?.prices && (
+          <div className="mt-4 text-xs text-gray-500">
+            Last updated: {pnlData.timestamp ? new Date(pnlData.timestamp).toLocaleString() : 'Never'}
+          </div>
+        )}
       </div>
 
       {/* Graphique */}
@@ -110,7 +129,7 @@ function VaultSection({ wallet, combinedBalances, onRefresh }) {
                     borderRadius: '8px',
                     color: '#fff'
                   }}
-                  formatter={(value) => [`${value.toFixed(2)} HYPE`, 'Value']}
+                  formatter={(value) => [`$${value.toFixed(2)}`, 'Value']}
                 />
                 <Line
                   type="monotone"
@@ -143,11 +162,12 @@ function VaultSection({ wallet, combinedBalances, onRefresh }) {
         
         <div className="space-y-1">
           {/* Header */}
-          <div className="grid grid-cols-5 gap-4 pb-3 border-b border-[#1a1a1a]">
+          <div className="grid grid-cols-6 gap-4 pb-3 border-b border-[#1a1a1a]">
             <div className="col-span-1 text-sm text-gray-500 uppercase">Asset</div>
             <div className="col-span-1 text-sm text-gray-500 uppercase text-right">Hyperliquid</div>
             <div className="col-span-1 text-sm text-gray-500 uppercase text-right">HyperEVM</div>
             <div className="col-span-2 text-sm text-gray-500 uppercase text-right">Total</div>
+            <div className="col-span-1 text-sm text-gray-500 uppercase text-right">USD Value</div>
           </div>
 
           {/* Tokens */}
@@ -158,6 +178,7 @@ function VaultSection({ wallet, combinedBalances, onRefresh }) {
           ) : (
             displayTokens.map((token) => {
               const balance = combinedBalances.balances[token];
+              const breakdown = pnlData?.breakdown?.[token];
               
               // Ne pas afficher si toutes les balances sont à 0
               if (!balance || balance.total === 0) {
@@ -165,7 +186,7 @@ function VaultSection({ wallet, combinedBalances, onRefresh }) {
               }
 
               return (
-                <div key={token} className="grid grid-cols-5 gap-4 py-4 hover:bg-white/5 transition-colors rounded-lg px-2">
+                <div key={token} className="grid grid-cols-6 gap-4 py-4 hover:bg-white/5 transition-colors rounded-lg px-2">
                   {/* Asset */}
                   <div className="col-span-1 flex items-center gap-3">
                     <div className="w-10 h-10 bg-[#1a1a1a] rounded-full flex items-center justify-center text-2xl">
@@ -198,12 +219,21 @@ function VaultSection({ wallet, combinedBalances, onRefresh }) {
 
                   {/* Total */}
                   <div className="col-span-2 text-right">
-                    <div className="text-white font-bold text-lg">
+                    <div className="text-white font-bold">
                       {balance.total.toLocaleString('en-US', { 
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 6 
                       })} {token}
                     </div>
+                  </div>
+
+                  {/* USD Value */}
+                  <div className="col-span-1 text-right">
+                    {breakdown && (
+                      <div className="text-gray-300 font-medium">
+                        ${breakdown.value.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -217,6 +247,16 @@ function VaultSection({ wallet, combinedBalances, onRefresh }) {
           )}
         </div>
       </div>
+
+      {/* Settings Modal */}
+      <VaultSettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        currentSettings={pnlData?.settings}
+        currentValue={totalUSD}
+        pnlData={pnlData}
+        onSave={onSaveSettings}
+      />
     </div>
   )
 }

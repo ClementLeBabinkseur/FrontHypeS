@@ -13,6 +13,7 @@ function App() {
   const [wallets, setWallets] = useState([])
   const [walletBalances, setWalletBalances] = useState({})
   const [vaultCombinedBalances, setVaultCombinedBalances] = useState(null)
+  const [vaultPnlData, setVaultPnlData] = useState(null)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [currentView, setCurrentView] = useState('dashboard') // 'dashboard' or 'wallets'
@@ -58,6 +59,33 @@ function App() {
     }
   }
 
+  // Rafraîchir le PNL du vault
+  const refreshVaultPnl = async (forceRefresh = false) => {
+    try {
+      console.log('Fetching vault PNL...')
+      const url = forceRefresh 
+        ? `${API_URL}/vault/pnl?refresh=true`
+        : `${API_URL}/vault/pnl`
+      const response = await axios.get(url)
+      console.log('PNL data received:', response.data)
+      setVaultPnlData(response.data)
+    } catch (error) {
+      console.error(`Error fetching PNL:`, error)
+    }
+  }
+
+  // Sauvegarder les settings du vault
+  const saveVaultSettings = async (settings) => {
+    try {
+      await axios.post(`${API_URL}/vault/settings`, settings)
+      // Recharger le PNL avec les nouveaux settings
+      await refreshVaultPnl(true)
+    } catch (error) {
+      console.error('Error saving vault settings:', error)
+      throw error
+    }
+  }
+
   // Rafraîchir tous les wallets
   const refreshAllWallets = async () => {
     setIsRefreshing(true)
@@ -66,6 +94,7 @@ function App() {
       const vault = wallets.find(w => w.walletType === 'vault')
       if (vault) {
         await refreshVaultCombined(vault)
+        await refreshVaultPnl(true) // Force refresh des prix
       }
       
       // Rafraîchir les executors
@@ -204,6 +233,9 @@ function App() {
                 <VaultSection
                   wallet={vaultWallet}
                   combinedBalances={vaultCombinedBalances}
+                  pnlData={vaultPnlData}
+                  onRefresh={refreshAllWallets}
+                  onSaveSettings={saveVaultSettings}
                   onDelete={() => deleteWallet(vaultWallet.id)}
                 />
               ) : (
