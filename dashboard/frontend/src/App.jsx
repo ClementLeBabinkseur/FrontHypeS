@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { Plus, LayoutDashboard, Activity, RefreshCw, Wallet } from 'lucide-react'
+import { Plus, LayoutDashboard, Activity, RefreshCw, Wallet, Menu, X } from 'lucide-react'
 import VaultSection from './components/VaultSection_Unified'
 import ExecutorSection from './components/ExecutorSection'
 import AddWalletModal from './components/AddWalletModal_Unified'
@@ -17,6 +17,8 @@ function App() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [currentView, setCurrentView] = useState('dashboard') // 'dashboard' or 'wallets'
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
   // Charger les wallets au démarrage
   useEffect(() => {
@@ -152,43 +154,91 @@ function App() {
   const executorWallets = wallets.filter(w => w.walletType === 'executor')
 
   return (
-    <div className="min-h-screen bg-[#0f0f0f] flex">
+    <div className="flex h-screen bg-black text-white overflow-hidden">
+      {/* Mobile Menu Button */}
+      <button
+        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        className="lg:hidden fixed top-4 left-4 z-50 p-3 bg-[#0a0a0a] border border-[#1a1a1a] rounded-lg"
+      >
+        {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+      </button>
+
+      {/* Mobile Overlay */}
+      {isMobileMenuOpen && (
+        <div 
+          className="lg:hidden fixed inset-0 bg-black/80 z-40"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="w-60 bg-[#0a0a0a] border-r border-[#1a1a1a] flex-shrink-0">
+      <aside className={`
+        ${isSidebarCollapsed ? 'w-20' : 'w-60'} 
+        bg-[#0a0a0a] border-r border-[#1a1a1a] flex-shrink-0 transition-all duration-300
+        fixed lg:static inset-y-0 left-0 z-40
+        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+      `}>
         <div className="p-6">
+          {/* Logo + Toggle */}
+          <div className="flex items-center justify-between mb-8">
+            {!isSidebarCollapsed && (
+              <h1 className="text-xl font-bold">VAULT</h1>
+            )}
+            <button
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              className="p-2 hover:bg-white/10 rounded-lg transition-colors hidden lg:block"
+              title={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Navigation */}
           <div className="space-y-2">
             <button
-              onClick={() => setCurrentView('dashboard')}
+              onClick={() => {
+                setCurrentView('dashboard')
+                setIsMobileMenuOpen(false)
+              }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors ${
                 currentView === 'dashboard'
                   ? 'bg-[#1f1f1f] text-white'
                   : 'text-gray-500 hover:bg-[#1f1f1f] hover:text-white'
-              }`}
+              } ${isSidebarCollapsed ? 'justify-center' : ''}`}
+              title="Dashboard"
             >
-              <LayoutDashboard className="w-5 h-5" />
-              Dashboard
+              <LayoutDashboard className="w-5 h-5 flex-shrink-0" />
+              {!isSidebarCollapsed && <span>Dashboard</span>}
             </button>
             <button
-              onClick={() => setCurrentView('activity')}
+              onClick={() => {
+                setCurrentView('activity')
+                setIsMobileMenuOpen(false)
+              }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors ${
                 currentView === 'activity'
                   ? 'bg-[#1f1f1f] text-white'
                   : 'text-gray-500 hover:bg-[#1f1f1f] hover:text-white'
-              }`}
+              } ${isSidebarCollapsed ? 'justify-center' : ''}`}
+              title="Activity"
             >
-              <Activity className="w-5 h-5" />
-              Activity
+              <Activity className="w-5 h-5 flex-shrink-0" />
+              {!isSidebarCollapsed && <span>Activity</span>}
             </button>
             <button
-              onClick={() => setCurrentView('wallets')}
+              onClick={() => {
+                setCurrentView('wallets')
+                setIsMobileMenuOpen(false)
+              }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors ${
                 currentView === 'wallets'
                   ? 'bg-[#1f1f1f] text-white'
                   : 'text-gray-500 hover:bg-[#1f1f1f] hover:text-white'
-              }`}
+              } ${isSidebarCollapsed ? 'justify-center' : ''}`}
+              title="Wallets"
             >
-              <Wallet className="w-5 h-5" />
-              Wallets
+              <Wallet className="w-5 h-5 flex-shrink-0" />
+              {!isSidebarCollapsed && <span>Wallets</span>}
             </button>
           </div>
         </div>
@@ -196,10 +246,10 @@ function App() {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
-        <div className="max-w-7xl mx-auto p-8">
+        <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 pt-20 lg:pt-8">
           {/* Header avec boutons Refresh et Add */}
-          <div className="flex justify-between items-center mb-8">
-            <h1 className="text-4xl font-bold text-white">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+            <h1 className="text-3xl sm:text-4xl font-bold text-white">
               {currentView === 'dashboard' && 'VAULT'}
               {currentView === 'activity' && 'ACTIVITY'}
               {currentView === 'wallets' && 'WALLETS'}

@@ -50,8 +50,8 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
     <div className="space-y-6">
       {/* Total + PNL */}
       <div>
-        <div className="flex items-center justify-between mb-6">
-          <div className="text-5xl font-bold text-white">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+          <div className="text-4xl sm:text-5xl font-bold text-white">
             ${totalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           
@@ -66,13 +66,13 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
         </div>
 
         {/* PNL Box */}
-        <div className="bg-[#1a1a1a] rounded-lg p-4 inline-flex items-center gap-8">
-          <div className="text-gray-400 font-medium">PNL</div>
+        <div className="bg-[#1a1a1a] rounded-lg p-4 inline-flex items-center gap-4 sm:gap-8">
+          <div className="text-gray-400 font-medium text-sm sm:text-base">PNL</div>
           <div className="text-right">
-            <div className={`text-lg font-bold ${pnlPercent >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+            <div className={`text-base sm:text-lg font-bold ${pnlPercent >= 0 ? 'text-green-500' : 'text-red-500'}`}>
               {pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%
             </div>
-            <div className={`text-sm ${pnlAmount >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+            <div className={`text-xs sm:text-sm ${pnlAmount >= 0 ? 'text-green-500' : 'text-red-500'}`}>
               {pnlAmount >= 0 ? '+' : ''}${Math.abs(pnlAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
@@ -149,18 +149,19 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
       </div>
 
       {/* Vault Balance Combiné */}
-      <div className="bg-[#0a0a0a] rounded-lg p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-white">vault balance</h2>
+      <div className="bg-[#0a0a0a] rounded-lg p-4 sm:p-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0 mb-6">
+          <h2 className="text-lg sm:text-xl font-bold text-white">vault balance</h2>
           {wallet?.addresses && (
             <div className="text-xs text-gray-500">
-              <div>HL: {wallet.addresses.hyperliquid.slice(0, 10)}...</div>
-              <div>EVM: {wallet.addresses.hyperevm.slice(0, 10)}...</div>
+              <div className="truncate max-w-[200px] sm:max-w-none">HL: {wallet.addresses.hyperliquid.slice(0, 10)}...</div>
+              <div className="truncate max-w-[200px] sm:max-w-none">EVM: {wallet.addresses.hyperevm.slice(0, 10)}...</div>
             </div>
           )}
         </div>
         
-        <div className="space-y-1">
+        {/* Desktop Table */}
+        <div className="hidden lg:block space-y-1">
           {/* Header */}
           <div className="grid grid-cols-6 gap-4 pb-3 border-b border-[#1a1a1a]">
             <div className="col-span-1 text-sm text-gray-500 uppercase">Asset</div>
@@ -180,14 +181,12 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
               const balance = combinedBalances.balances[token];
               const breakdown = pnlData?.breakdown?.[token];
               
-              // Ne pas afficher si toutes les balances sont à 0
               if (!balance || balance.total === 0) {
                 return null;
               }
 
               return (
                 <div key={token} className="grid grid-cols-6 gap-4 py-4 hover:bg-white/5 transition-colors rounded-lg px-2">
-                  {/* Asset */}
                   <div className="col-span-1 flex items-center gap-3">
                     <div className="w-10 h-10 bg-[#1a1a1a] rounded-full flex items-center justify-center text-2xl">
                       {tokenEmojis[token]}
@@ -197,7 +196,6 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
                     </div>
                   </div>
 
-                  {/* Hyperliquid */}
                   <div className="col-span-1 text-right">
                     <div className="text-gray-400 text-sm font-mono">
                       {balance.hyperliquid.toLocaleString('en-US', { 
@@ -207,7 +205,6 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
                     </div>
                   </div>
 
-                  {/* HyperEVM */}
                   <div className="col-span-1 text-right">
                     <div className="text-gray-400 text-sm font-mono">
                       {balance.hyperevm.toLocaleString('en-US', { 
@@ -217,7 +214,6 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
                     </div>
                   </div>
 
-                  {/* Total */}
                   <div className="col-span-2 text-right">
                     <div className="text-white font-bold">
                       {balance.total.toLocaleString('en-US', { 
@@ -227,7 +223,6 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
                     </div>
                   </div>
 
-                  {/* USD Value */}
                   <div className="col-span-1 text-right">
                     {breakdown && (
                       <div className="text-gray-300 font-medium">
@@ -239,13 +234,70 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
               );
             })
           )}
+        </div>
 
-          {combinedBalances && displayTokens.every(token => !combinedBalances.balances[token] || combinedBalances.balances[token].total === 0) && (
-            <div className="py-8 text-center text-gray-500">
-              No tokens found
+        {/* Mobile Cards */}
+        <div className="lg:hidden space-y-4">
+          {!combinedBalances ? (
+            <div className="py-8 text-center text-gray-500 text-sm">
+              Click the refresh button above to load balances
             </div>
+          ) : (
+            displayTokens.map((token) => {
+              const balance = combinedBalances.balances[token];
+              const breakdown = pnlData?.breakdown?.[token];
+              
+              if (!balance || balance.total === 0) {
+                return null;
+              }
+
+              return (
+                <div key={token} className="bg-[#1a1a1a] rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-[#0a0a0a] rounded-full flex items-center justify-center text-2xl">
+                        {tokenEmojis[token]}
+                      </div>
+                      <div className="text-white font-bold text-lg">{token}</div>
+                    </div>
+                    {breakdown && (
+                      <div className="text-white font-bold">
+                        ${breakdown.value.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Hyperliquid:</span>
+                      <span className="text-gray-300 font-mono">
+                        {balance.hyperliquid.toLocaleString('en-US', { maximumFractionDigits: 6 })}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">HyperEVM:</span>
+                      <span className="text-gray-300 font-mono">
+                        {balance.hyperevm.toLocaleString('en-US', { maximumFractionDigits: 6 })}
+                      </span>
+                    </div>
+                    <div className="flex justify-between pt-2 border-t border-white/10">
+                      <span className="text-gray-400 font-medium">Total:</span>
+                      <span className="text-white font-bold">
+                        {balance.total.toLocaleString('en-US', { maximumFractionDigits: 6 })} {token}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
+
+        {combinedBalances && displayTokens.every(token => !combinedBalances.balances[token] || combinedBalances.balances[token].total === 0) && (
+          <div className="py-8 text-center text-gray-500 text-sm">
+            No tokens found
+          </div>
+        )}
       </div>
 
       {/* Settings Modal */}
