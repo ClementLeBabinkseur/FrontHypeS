@@ -5,6 +5,8 @@ const fs = require('fs').promises;
 const path = require('path');
 const axios = require('axios');
 const cron = require('node-cron');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const app = express();
@@ -12,6 +14,10 @@ const PORT = process.env.PORT || 3001;
 const WALLETS_FILE = process.env.DATA_DIR 
   ? path.join(process.env.DATA_DIR, 'wallets.json')
   : path.join(__dirname, 'wallets.json');
+const USERS_FILE = process.env.DATA_DIR
+  ? path.join(process.env.DATA_DIR, 'users.json')
+  : path.join(__dirname, 'users.json');
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this-in-production-please-make-it-random-and-long';
 
 // Middleware
 app.use(cors());
@@ -19,6 +25,7 @@ app.use(express.json());
 
 console.log('🚀 Hyperliquid Dashboard Backend starting...');
 console.log(`📁 Data file: ${WALLETS_FILE}`);
+console.log(`👥 Users file: ${USERS_FILE}`);
 
 // ============ PRICE CACHE ============
 
@@ -343,10 +350,120 @@ async function getHyperEVMBalances(address) {
   }
 }
 
+// ============ USERS MANAGEMENT ============
+
+// Charger les utilisateurs
+async function loadUsers() {
+  try {
+    const data = await fs.readFile(USERS_FILE, 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      // Créer le fichier avec un utilisateur admin par défaut
+      const defaultUsers = {
+        users: [
+          {
+            id: '1',
+            username: 'admin',
+            password: await bcrypt.hash('admin', 10), // Mot de passe: admin
+            createdAt: new Date().toISOString()
+          }
+        ]
+      };
+      await fs.writeFile(USERS_FILE, JSON.stringify(defaultUsers, null, 2));
+      console.log('👤 Created default admin user (username: admin, password: admin)');
+      return defaultUsers;
+    }
+    throw error;
+  }
+}
+
+// Sauvegarder les utilisateurs
+async function saveUsers(data) {
+  await fs.writeFile(USERS_FILE, JSON.stringify(data, null, 2));
+}
+
+// Middleware d'authentification
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ error: 'Invalid or expired token' });
+    }
+    req.user = user;
+    next();
+  });
+}
+
+// ============ AUTHENTICATION ROUTES ============
+
+// POST login
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password required' });
+    }
+
+    const data = await loadUsers();
+    const user = data.users.find(u => u.username === username);
+
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Générer JWT token (expire dans 7 jours)
+    const token = jwt.sign(
+      { userId: user.id, username: user.username },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        username: user.username
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET verify token
+app.get('/api/auth/verify', authenticateToken, (req, res) => {
+  res.json({
+    valid: true,
+    user: {
+      id: req.user.userId,
+      username: req.user.username
+    }
+  });
+});
+
+// POST logout (optionnel, côté client suffit)
+app.post('/api/auth/logout', authenticateToken, (req, res) => {
+  // Avec JWT, le logout se fait côté client en supprimant le token
+  res.json({ message: 'Logged out successfully' });
+});
+
 // ============ ROUTES API ============
 
 // GET tous les wallets
-app.get('/api/wallets', async (req, res) => {
+app.get('/api/wallets', authenticateToken, async (req, res) => {
   try {
     const data = await loadWallets();
     res.json(data);
@@ -356,7 +473,7 @@ app.get('/api/wallets', async (req, res) => {
 });
 
 // POST ajouter un wallet
-app.post('/api/wallets', async (req, res) => {
+app.post('/api/wallets', authenticateToken, async (req, res) => {
   try {
     const { address, addresses, blockchain, nickname, walletType } = req.body;
     
@@ -423,7 +540,7 @@ app.post('/api/wallets', async (req, res) => {
 });
 
 // PUT modifier un wallet
-app.put('/api/wallets/:id', async (req, res) => {
+app.put('/api/wallets/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
@@ -454,7 +571,7 @@ app.put('/api/wallets/:id', async (req, res) => {
 });
 
 // DELETE supprimer un wallet
-app.delete('/api/wallets/:id', async (req, res) => {
+app.delete('/api/wallets/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const data = await loadWallets();
@@ -469,7 +586,7 @@ app.delete('/api/wallets/:id', async (req, res) => {
 });
 
 // GET balances d'un wallet
-app.get('/api/wallets/:address/balances', async (req, res) => {
+app.get('/api/wallets/:address/balances', authenticateToken, async (req, res) => {
   try {
     const { address } = req.params;
     const { blockchain } = req.query;
@@ -506,7 +623,7 @@ app.get('/api/wallets/:address/balances', async (req, res) => {
 });
 
 // GET balances combinées d'un vault (Hyperliquid + HyperEVM)
-app.get('/api/wallets/:id/combined-balances', async (req, res) => {
+app.get('/api/wallets/:id/combined-balances', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const data = await loadWallets();
@@ -534,7 +651,7 @@ app.get('/api/wallets/:id/combined-balances', async (req, res) => {
     
     // Combiner les balances par token
     const combined = {};
-    const tokens = ['HYPE', 'ETH', 'BTC', 'USDT','USDC'];
+    const tokens = ['HYPE', 'ETH', 'BTC', 'USDT'];
     
     for (const token of tokens) {
       const hlBalance = hlBalances.find(b => b.token === token);
@@ -567,7 +684,7 @@ app.get('/api/wallets/:id/combined-balances', async (req, res) => {
 });
 
 // POST créer/modifier des tags
-app.post('/api/tags', async (req, res) => {
+app.post('/api/tags', authenticateToken, async (req, res) => {
   try {
     const { tags } = req.body;
     
@@ -591,7 +708,7 @@ app.post('/api/tags', async (req, res) => {
 });
 
 // GET les contrats de tokens ERC-20 configurés
-app.get('/api/token-contracts', async (req, res) => {
+app.get('/api/token-contracts', authenticateToken, async (req, res) => {
   try {
     const data = await loadWallets();
     res.json(data.hyperevmTokenContracts || { WETH: '', WBTC: '', USDT: '' });
@@ -601,7 +718,7 @@ app.get('/api/token-contracts', async (req, res) => {
 });
 
 // POST/PUT sauvegarder les contrats de tokens ERC-20
-app.post('/api/token-contracts', async (req, res) => {
+app.post('/api/token-contracts', authenticateToken, async (req, res) => {
   try {
     const { WETH, WBTC, USDT } = req.body;
     
@@ -632,7 +749,7 @@ app.post('/api/token-contracts', async (req, res) => {
 });
 
 // GET les prix actuels
-app.get('/api/prices', async (req, res) => {
+app.get('/api/prices', authenticateToken, async (req, res) => {
   try {
     const forceRefresh = req.query.refresh === 'true';
     const prices = await getPrices(forceRefresh);
@@ -648,7 +765,7 @@ app.get('/api/prices', async (req, res) => {
 });
 
 // GET les settings du vault
-app.get('/api/vault/settings', async (req, res) => {
+app.get('/api/vault/settings', authenticateToken, async (req, res) => {
   try {
     const data = await loadWallets();
     
@@ -667,7 +784,7 @@ app.get('/api/vault/settings', async (req, res) => {
 });
 
 // POST mettre à jour les settings du vault
-app.post('/api/vault/settings', async (req, res) => {
+app.post('/api/vault/settings', authenticateToken, async (req, res) => {
   try {
     const { initialInvestmentUSD, initialDate } = req.body;
     
@@ -689,7 +806,7 @@ app.post('/api/vault/settings', async (req, res) => {
 });
 
 // GET toutes les transactions du vault
-app.get('/api/vault/transactions', async (req, res) => {
+app.get('/api/vault/transactions', authenticateToken, async (req, res) => {
   try {
     const data = await loadWallets();
     res.json({ transactions: data.vaultTransactions || [] });
@@ -699,7 +816,7 @@ app.get('/api/vault/transactions', async (req, res) => {
 });
 
 // POST ajouter une transaction
-app.post('/api/vault/transactions', async (req, res) => {
+app.post('/api/vault/transactions', authenticateToken, async (req, res) => {
   try {
     const { type, amount, date, note } = req.body;
     
@@ -739,7 +856,7 @@ app.post('/api/vault/transactions', async (req, res) => {
 });
 
 // DELETE supprimer une transaction
-app.delete('/api/vault/transactions/:id', async (req, res) => {
+app.delete('/api/vault/transactions/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const data = await loadWallets();
@@ -763,7 +880,7 @@ app.delete('/api/vault/transactions/:id', async (req, res) => {
 });
 
 // GET calculer le PNL du vault
-app.get('/api/vault/pnl', async (req, res) => {
+app.get('/api/vault/pnl', authenticateToken, async (req, res) => {
   try {
     const data = await loadWallets();
     const vault = data.wallets.find(w => w.walletType === 'vault');
@@ -893,7 +1010,7 @@ app.get('/api/vault/pnl', async (req, res) => {
 });
 
 // GET l'historique du PNL avec filtrage par période
-app.get('/api/vault/pnl-history', async (req, res) => {
+app.get('/api/vault/pnl-history', authenticateToken, async (req, res) => {
   try {
     const data = await loadWallets();
     const snapshots = data.pnlSnapshots || [];

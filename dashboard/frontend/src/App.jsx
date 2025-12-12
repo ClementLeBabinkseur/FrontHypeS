@@ -1,16 +1,22 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { Plus, LayoutDashboard, Activity, RefreshCw, Wallet, Menu, X } from 'lucide-react'
+import { Plus, LayoutDashboard, Activity, RefreshCw, Wallet, Menu, X, LogOut } from 'lucide-react'
 import VaultSection from './components/VaultSection_Unified'
 import ExecutorSection from './components/ExecutorSection'
 import AddWalletModal from './components/AddWalletModal_Unified'
 import WalletsManagement from './components/WalletsManagement'
 import TransactionsModal from './components/TransactionsModal'
+import LoginPage from './components/LoginPage'
 
 // En développement: localhost:3001, en production: via proxy Nginx
 const API_URL = import.meta.env.DEV ? 'http://localhost:3001/api' : '/api'
 
 function App() {
+  // Authentication state
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [user, setUser] = useState(null)
+  const [token, setToken] = useState(null)
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true)
   const [wallets, setWallets] = useState([])
   const [walletBalances, setWalletBalances] = useState({})
   const [vaultCombinedBalances, setVaultCombinedBalances] = useState(null)
@@ -23,7 +29,84 @@ function App() {
   const [isTransactionsModalOpen, setIsTransactionsModalOpen] = useState(false)
   const [transactions, setTransactions] = useState([])
 
-  // Charger les wallets au démarrage
+  // ============ AUTHENTICATION ============
+
+  // Vérifier le token au chargement
+  useEffect(() => {
+    const checkAuth = async () => {
+      const savedToken = localStorage.getItem('token')
+      const savedUser = localStorage.getItem('user')
+
+      if (!savedToken || !savedUser) {
+        setIsCheckingAuth(false)
+        return
+      }
+
+      try {
+        // Vérifier si le token est toujours valide
+        const response = await axios.get(`${API_URL}/auth/verify`, {
+          headers: {
+            'Authorization': `Bearer ${savedToken}`
+          }
+        })
+
+        if (response.data.valid) {
+          setToken(savedToken)
+          setUser(JSON.parse(savedUser))
+          setIsAuthenticated(true)
+        } else {
+          // Token invalide, nettoyer
+          localStorage.removeItem('token')
+          localStorage.removeItem('user')
+        }
+      } catch (error) {
+        console.error('Auth verification failed:', error)
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+      } finally {
+        setIsCheckingAuth(false)
+      }
+    }
+
+    checkAuth()
+  }, [])
+
+  // Handler de login
+  const handleLogin = (newToken, newUser) => {
+    setToken(newToken)
+    setUser(newUser)
+    setIsAuthenticated(true)
+  }
+
+  // Handler de logout
+  const handleLogout = async () => {
+    try {
+      await axios.post(`${API_URL}/auth/logout`, {}, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+    } catch (error) {
+      console.error('Logout error:', error)
+    } finally {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      setToken(null)
+      setUser(null)
+      setIsAuthenticated(false)
+    }
+  }
+
+  // Configurer axios pour inclure le token dans toutes les requêtes
+  useEffect(() => {
+    if (token) {
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
+    } else {
+      delete axios.defaults.headers.common['Authorization']
+    }
+  }, [token])
+
+  // ============ DATA FETCHING ============
   useEffect(() => {
     loadWallets()
   }, [])
@@ -208,6 +291,23 @@ function App() {
   const vaultWallet = wallets.find(w => w.walletType === 'vault')
   const executorWallets = wallets.filter(w => w.walletType === 'executor')
 
+  // Afficher un loader pendant la vérification d'auth
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-white mb-4"></div>
+          <p className="text-gray-400">Checking authentication...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Afficher la page de login si non authentifié
+  if (!isAuthenticated) {
+    return <LoginPage onLogin={handleLogin} />
+  }
+
   return (
     <div className="flex h-screen bg-black text-white overflow-hidden">
       {/* Mobile Menu Button */}
@@ -233,7 +333,7 @@ function App() {
         fixed lg:static inset-y-0 left-0 z-40
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
-        <div className="p-6">
+        <div className="p-6 h-full relative pb-32">
           {/* Logo + Toggle */}
           <div className="flex items-center justify-between mb-8">
             {!isSidebarCollapsed && (
@@ -295,6 +395,23 @@ function App() {
               <Wallet className="w-5 h-5 flex-shrink-0" />
               {!isSidebarCollapsed && <span>Wallets</span>}
             </button>
+          </div>
+
+          {/* Logout Button */}
+          <div className="absolute bottom-6 left-0 right-0 px-6">
+            <button
+              onClick={handleLogout}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors text-red-400 hover:bg-red-500/10 border border-red-500/20 ${isSidebarCollapsed ? 'justify-center' : ''}`}
+              title="Logout"
+            >
+              <LogOut className="w-5 h-5 flex-shrink-0" />
+              {!isSidebarCollapsed && <span>Logout</span>}
+            </button>
+            {!isSidebarCollapsed && user && (
+              <div className="mt-3 px-2 text-xs text-gray-600">
+                Logged in as <span className="text-gray-400">{user.username}</span>
+              </div>
+            )}
           </div>
         </div>
       </aside>
