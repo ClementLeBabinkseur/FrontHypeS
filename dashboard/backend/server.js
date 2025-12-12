@@ -956,13 +956,27 @@ async function calculateAndSavePnlSnapshot() {
       data.pnlSnapshots = [];
     }
     
+    // LOG DEBUG
+    console.log(`📁 File path: ${WALLETS_FILE}`);
+    console.log(`💾 Snapshots before adding: ${data.pnlSnapshots.length}`);
+    
     // Ajouter le snapshot (illimité pour l'instant)
     data.pnlSnapshots.push(snapshot);
+    
+    console.log(`➕ Snapshot added, total now: ${data.pnlSnapshots.length}`);
     
     // Sauvegarder
     await saveWallets(data);
     
     console.log(`✅ PNL snapshot saved: $${totalUSD.toFixed(2)} (${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%) - Total snapshots: ${data.pnlSnapshots.length}`);
+    
+    // VÉRIFICATION : Relire le fichier pour confirmer la persistance
+    const verification = await loadWallets();
+    console.log(`🔍 Verification read: ${verification.pnlSnapshots?.length || 0} snapshots in file`);
+    
+    if (verification.pnlSnapshots?.length !== data.pnlSnapshots.length) {
+      console.error(`❌ PERSISTENCE ISSUE! Expected ${data.pnlSnapshots.length}, found ${verification.pnlSnapshots?.length || 0}`);
+    }
     
   } catch (error) {
     console.error('❌ Error calculating PNL snapshot:', error.message);
