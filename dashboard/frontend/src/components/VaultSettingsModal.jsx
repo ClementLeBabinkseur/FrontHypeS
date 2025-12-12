@@ -42,9 +42,9 @@ function VaultSettingsModal({ isOpen, onClose, onSave, currentSettings, currentV
 
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-      <div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-lg max-w-xl w-full">
+      <div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-lg max-w-xl w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="p-6 border-b border-[#1a1a1a]">
+        <div className="p-6 border-b border-[#1a1a1a] sticky top-0 bg-[#0a0a0a] z-10">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-white">Vault Settings</h2>
             <button
@@ -149,7 +149,7 @@ function VaultSettingsModal({ isOpen, onClose, onSave, currentSettings, currentV
         </div>
 
         {/* Footer */}
-        <div className="p-6 border-t border-[#1a1a1a] flex gap-3 justify-end">
+        <div className="p-6 border-t border-[#1a1a1a] flex gap-3 justify-end sticky bottom-0 bg-[#0a0a0a] z-10">
           <button
             onClick={onClose}
             className="px-6 py-3 bg-white/5 hover:bg-white/10 text-white rounded-lg transition-colors"
