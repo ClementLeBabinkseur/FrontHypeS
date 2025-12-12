@@ -46,7 +46,9 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
       if (!pnlData) return
 
       try {
-        const response = await fetch(`http://localhost:3001/api/vault/pnl-history?period=${period}`)
+        // Utiliser la même API_URL que le reste de l'app
+        const API_URL = import.meta.env.DEV ? 'http://localhost:3001/api' : '/api'
+        const response = await fetch(`${API_URL}/vault/pnl-history?period=${period}`)
         const data = await response.json()
         
         if (data.history && data.history.length > 0) {
@@ -79,7 +81,6 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
 
     fetchHistory()
   }, [period, pnlData])
-
 
   // Emojis pour les tokens
   const tokenEmojis = {
