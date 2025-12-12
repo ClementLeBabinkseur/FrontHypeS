@@ -4,6 +4,7 @@ const cors = require('cors');
 const fs = require('fs').promises;
 const path = require('path');
 const axios = require('axios');
+const cron = require('node-cron');
 require('dotenv').config();
 
 const app = express();
@@ -15,6 +16,9 @@ const WALLETS_FILE = process.env.DATA_DIR
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+console.log('🚀 Hyperliquid Dashboard Backend starting...');
+console.log(`📁 Data file: ${WALLETS_FILE}`);
 
 // ============ PRICE CACHE ============
 
@@ -29,8 +33,7 @@ const COINGECKO_IDS = {
   'HYPE': 'hyperliquid',
   'ETH': 'ethereum',
   'BTC': 'bitcoin',
-  'USDT': 'tether',
-  'USDC': 'tether'
+  'USDT': 'tether'
 };
 
 // Récupérer les prix depuis CoinGecko
@@ -301,7 +304,7 @@ async function getHyperEVMBalances(address) {
       'USDâ®0': 'USDT',
       'USDâ®0': 'USDT',
       'USDT': 'USDT',
-      'USDC' : 'USDC', //#TODO à differencier
+      'USDC' : 'USDC',
     };
 
     // Récupérer les balances de chaque token ERC-20
@@ -700,11 +703,219 @@ app.get('/api/vault/pnl', async (req, res) => {
       return res.status(400).json({ error: 'Vault must have both addresses' });
     }
     
+    // Si force refresh demandé, recalculer
+    const forceRefresh = req.query.refresh === 'true';
+    
+    if (forceRefresh) {
+      // Recalculer et sauvegarder un nouveau snapshot
+      await calculateAndSavePnlSnapshot();
+      
+      // Recharger les données après le calcul
+      const updatedData = await loadWallets();
+      const latestSnapshot = updatedData.pnlSnapshots?.[updatedData.pnlSnapshots.length - 1];
+      
+      if (!latestSnapshot) {
+        return res.status(404).json({ error: 'No PNL data available' });
+      }
+      
+      // Récupérer les prix actuels pour le breakdown
+      const prices = await getPrices(false);
+      
+      // Récupérer les balances pour le breakdown
+      const hlBalances = await getHyperliquidBalances(vault.addresses.hyperliquid);
+      const evmBalances = await getHyperEVMBalances(vault.addresses.hyperevm);
+      
+      const tokens = ['HYPE', 'ETH', 'BTC', 'USDT'];
+      const combined = {};
+      const breakdown = {};
+      
+      for (const token of tokens) {
+        const hlBalance = hlBalances.find(b => b.token === token);
+        const evmBalance = evmBalances.find(b => b.token === token);
+        
+        const hlValue = hlBalance ? parseFloat(hlBalance.balance) : 0;
+        const evmValue = evmBalance ? parseFloat(evmBalance.balance) : 0;
+        const total = hlValue + evmValue;
+        
+        combined[token] = total;
+        breakdown[token] = {
+          amount: total,
+          price: prices[token] || 0,
+          value: total * (prices[token] || 0)
+        };
+      }
+      
+      const settings = updatedData.vaultSettings || { initialInvestmentUSD: 5000 };
+      const pnlAmount = latestSnapshot.v - settings.initialInvestmentUSD;
+      
+      return res.json({
+        totalUSD: latestSnapshot.v,
+        initialInvestmentUSD: settings.initialInvestmentUSD,
+        pnlAmount,
+        pnlPercent: latestSnapshot.p,
+        breakdown,
+        prices,
+        timestamp: latestSnapshot.t,
+        settings
+      });
+    }
+    
+    // Sinon, retourner le dernier snapshot disponible
+    const latestSnapshot = data.pnlSnapshots?.[data.pnlSnapshots.length - 1];
+    
+    if (!latestSnapshot) {
+      return res.status(404).json({ 
+        error: 'No PNL data available yet. The cron job will create the first snapshot within 1 minute.' 
+      });
+    }
+    
+    // Récupérer les prix actuels pour le breakdown
+    const prices = await getPrices(false);
+    
+    // Récupérer les balances pour le breakdown
+    const hlBalances = await getHyperliquidBalances(vault.addresses.hyperliquid);
+    const evmBalances = await getHyperEVMBalances(vault.addresses.hyperevm);
+    
+    const tokens = ['HYPE', 'ETH', 'BTC', 'USDT'];
+    const breakdown = {};
+    
+    for (const token of tokens) {
+      const hlBalance = hlBalances.find(b => b.token === token);
+      const evmBalance = evmBalances.find(b => b.token === token);
+      
+      const hlValue = hlBalance ? parseFloat(hlBalance.balance) : 0;
+      const evmValue = evmBalance ? parseFloat(evmBalance.balance) : 0;
+      const total = hlValue + evmValue;
+      
+      breakdown[token] = {
+        amount: total,
+        price: prices[token] || 0,
+        value: total * (prices[token] || 0)
+      };
+    }
+    
+    const settings = data.vaultSettings || { initialInvestmentUSD: 5000 };
+    const pnlAmount = latestSnapshot.v - settings.initialInvestmentUSD;
+    
+    res.json({
+      totalUSD: latestSnapshot.v,
+      initialInvestmentUSD: settings.initialInvestmentUSD,
+      pnlAmount,
+      pnlPercent: latestSnapshot.p,
+      breakdown,
+      prices,
+      timestamp: latestSnapshot.t,
+      settings
+    });
+  } catch (error) {
+    console.error('Error getting PNL:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET l'historique du PNL avec filtrage par période
+app.get('/api/vault/pnl-history', async (req, res) => {
+  try {
+    const data = await loadWallets();
+    const snapshots = data.pnlSnapshots || [];
+    
+    if (snapshots.length === 0) {
+      return res.json({ history: [], total: 0 });
+    }
+    
+    const period = req.query.period || '1D';
+    const now = new Date();
+    let startDate;
+    
+    // Déterminer la date de début selon la période
+    switch (period) {
+      case '1D':
+        startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        break;
+      case '1M':
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      case '3M':
+        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+        break;
+      case '6M':
+        startDate = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+        break;
+      case '1Y':
+        startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+        break;
+      case 'All':
+        startDate = new Date(0); // Depuis le début
+        break;
+      default:
+        startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000); // Par défaut 24h
+    }
+    
+    // Filtrer les snapshots par période
+    const filteredSnapshots = snapshots.filter(s => new Date(s.t) >= startDate);
+    
+    if (filteredSnapshots.length === 0) {
+      return res.json({ history: [], total: 0, period });
+    }
+    
+    // Sampling pour éviter de retourner trop de points
+    const maxPoints = 2000; // Maximum de points à retourner
+    let sampledSnapshots;
+    
+    if (filteredSnapshots.length <= maxPoints) {
+      sampledSnapshots = filteredSnapshots;
+    } else {
+      // Calculer le pas pour le sampling
+      const step = Math.ceil(filteredSnapshots.length / maxPoints);
+      sampledSnapshots = filteredSnapshots.filter((_, index) => index % step === 0);
+    }
+    
+    res.json({
+      history: sampledSnapshots,
+      total: snapshots.length,
+      filtered: filteredSnapshots.length,
+      returned: sampledSnapshots.length,
+      period
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ============ AUTOMATIC PNL TRACKING ============
+
+/**
+ * Calcule et sauvegarde un snapshot PNL optimisé
+ */
+async function calculateAndSavePnlSnapshot() {
+  try {
+    const data = await loadWallets();
+    const vault = data.wallets.find(w => w.walletType === 'vault');
+    
+    // Vérifier si le vault existe
+    if (!vault || !vault.addresses || !vault.addresses.hyperliquid || !vault.addresses.hyperevm) {
+      console.log('⏭️  No vault configured, skipping PNL snapshot');
+      return;
+    }
+    
+    // Vérifier si les settings existent
+    if (!data.vaultSettings || !data.vaultSettings.initialInvestmentUSD) {
+      console.log('⏭️  Vault settings not configured, skipping PNL snapshot');
+      return;
+    }
+    
+    console.log('📊 Calculating PNL snapshot...');
+    
     // Récupérer les balances combinées
     const hlBalances = await getHyperliquidBalances(vault.addresses.hyperliquid);
     const evmBalances = await getHyperEVMBalances(vault.addresses.hyperevm);
     
-    const tokens = ['HYPE', 'ETH', 'BTC', 'USDT','USDC'];
+    const tokens = ['HYPE', 'ETH', 'BTC', 'USDT', 'USDC'];
     const combined = {};
     
     for (const token of tokens) {
@@ -717,96 +928,59 @@ app.get('/api/vault/pnl', async (req, res) => {
       combined[token] = hlValue + evmValue;
     }
     
-    // Récupérer les prix
-    const forceRefresh = req.query.refresh === 'true';
-    const prices = await getPrices(forceRefresh);
+    // Récupérer les prix (utilise le cache automatiquement)
+    const prices = await getPrices(false);
     
     // Calculer la valeur totale en USD
     let totalUSD = 0;
-    const breakdown = {};
     
     for (const token of tokens) {
       const amount = combined[token] || 0;
       const price = prices[token] || 0;
-      const value = amount * price;
-      
-      breakdown[token] = {
-        amount,
-        price,
-        value
-      };
-      
-      totalUSD += value;
+      totalUSD += amount * price;
     }
-    
-    // Récupérer les settings
-    const settings = data.vaultSettings || { initialInvestmentUSD: 5000 };
     
     // Calculer le PNL
-    const pnlAmount = totalUSD - settings.initialInvestmentUSD;
-    const pnlPercent = settings.initialInvestmentUSD > 0 
-      ? (pnlAmount / settings.initialInvestmentUSD) * 100 
-      : 0;
+    const initialInvestment = data.vaultSettings.initialInvestmentUSD;
+    const pnlAmount = totalUSD - initialInvestment;
+    const pnlPercent = initialInvestment > 0 ? (pnlAmount / initialInvestment) * 100 : 0;
     
-    // Sauvegarder un snapshot dans l'historique
-    if (!data.pnlHistory) {
-      data.pnlHistory = [];
-    }
-    
+    // Créer snapshot optimisé (structure légère)
     const snapshot = {
-      timestamp: new Date().toISOString(),
-      totalUSD,
-      pnlAmount,
-      pnlPercent,
-      balances: combined,
-      prices
+      t: new Date().toISOString(),  // timestamp
+      v: parseFloat(totalUSD.toFixed(2)),  // valeur USD
+      p: parseFloat(pnlPercent.toFixed(2))  // PNL %
     };
     
-    // Garder seulement les 1000 derniers snapshots
-    data.pnlHistory.push(snapshot);
-    if (data.pnlHistory.length > 1000) {
-      data.pnlHistory = data.pnlHistory.slice(-1000);
+    // Initialiser pnlSnapshots si nécessaire
+    if (!data.pnlSnapshots) {
+      data.pnlSnapshots = [];
     }
     
+    // Ajouter le snapshot (illimité pour l'instant)
+    data.pnlSnapshots.push(snapshot);
+    
+    // Sauvegarder
     await saveWallets(data);
     
-    res.json({
-      totalUSD,
-      initialInvestmentUSD: settings.initialInvestmentUSD,
-      pnlAmount,
-      pnlPercent,
-      breakdown,
-      prices,
-      timestamp: snapshot.timestamp
-    });
+    console.log(`✅ PNL snapshot saved: $${totalUSD.toFixed(2)} (${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%) - Total snapshots: ${data.pnlSnapshots.length}`);
+    
   } catch (error) {
-    console.error('Error calculating PNL:', error);
-    res.status(500).json({ error: error.message });
+    console.error('❌ Error calculating PNL snapshot:', error.message);
   }
+}
+
+// Démarrer le cron job (toutes les 1 minute)
+console.log('⏰ Starting PNL auto-tracking cron job (every 1 minute)...');
+cron.schedule('* * * * *', () => {
+  calculateAndSavePnlSnapshot();
 });
 
-// GET l'historique du PNL
-app.get('/api/vault/pnl-history', async (req, res) => {
-  try {
-    const data = await loadWallets();
-    const limit = parseInt(req.query.limit) || 100;
-    
-    const history = data.pnlHistory || [];
-    const limitedHistory = history.slice(-limit);
-    
-    res.json({
-      history: limitedHistory,
-      total: history.length
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+// Calculer un snapshot immédiatement au démarrage
+setTimeout(() => {
+  console.log('🎯 Calculating initial PNL snapshot...');
+  calculateAndSavePnlSnapshot();
+}, 5000); // Attendre 5 secondes après le démarrage
 
 // Démarrer le serveur
 app.listen(PORT, () => {

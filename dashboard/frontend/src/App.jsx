@@ -25,6 +25,23 @@ function App() {
     loadWallets()
   }, [])
 
+  // Auto-refresh du PNL toutes les 60 secondes
+  useEffect(() => {
+    const vault = wallets.find(w => w.walletType === 'vault')
+    if (!vault) return
+
+    // Fetch initial
+    refreshVaultPnl(false)
+
+    // Setup interval
+    const interval = setInterval(() => {
+      console.log('🔄 Auto-refreshing PNL...')
+      refreshVaultPnl(false) // false = utilise le dernier snapshot du backend
+    }, 60000) // 60 secondes
+
+    return () => clearInterval(interval)
+  }, [wallets]) // Dépend de wallets pour détecter l'ajout/suppression du vault
+
   const loadWallets = async () => {
     try {
       const response = await axios.get(`${API_URL}/wallets`)

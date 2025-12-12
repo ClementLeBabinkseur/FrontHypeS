@@ -4,31 +4,82 @@ import { Settings } from 'lucide-react'
 import VaultSettingsModal from './VaultSettingsModal'
 
 function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSettings }) {
-  const [period, setPeriod] = useState('1W')
+  const [period, setPeriod] = useState('1D')
   const [chartData, setChartData] = useState([])
   const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [lastUpdateText, setLastUpdateText] = useState('')
+  const [nextUpdateIn, setNextUpdateIn] = useState(60)
 
-  // Générer les données du graphique
+  // Mettre à jour le texte "last updated" toutes les secondes
   useEffect(() => {
-    if (!pnlData) return
+    if (!pnlData?.timestamp) return
 
-    const periods = {
-      '1D': 24,
-      '1W': 7,
-      '1M': 30,
-      '6M': 180,
-      '1Y': 365,
-      'All': 365
+    const updateTimestamp = () => {
+      const now = new Date()
+      const lastUpdate = new Date(pnlData.timestamp)
+      const diffSeconds = Math.floor((now - lastUpdate) / 1000)
+      
+      if (diffSeconds < 60) {
+        setLastUpdateText(`${diffSeconds} seconds ago`)
+      } else if (diffSeconds < 3600) {
+        const minutes = Math.floor(diffSeconds / 60)
+        setLastUpdateText(`${minutes} minute${minutes > 1 ? 's' : ''} ago`)
+      } else {
+        const hours = Math.floor(diffSeconds / 3600)
+        setLastUpdateText(`${hours} hour${hours > 1 ? 's' : ''} ago`)
+      }
+
+      // Calculer le temps avant le prochain update (60 secondes après le dernier)
+      const nextUpdate = 60 - (diffSeconds % 60)
+      setNextUpdateIn(nextUpdate)
     }
 
-    const points = periods[period] || 7
-    const data = Array.from({ length: points }, (_, i) => ({
-      time: i,
-      value: pnlData.totalUSD || 0
-    }))
+    updateTimestamp()
+    const interval = setInterval(updateTimestamp, 1000)
 
-    setChartData(data)
+    return () => clearInterval(interval)
+  }, [pnlData?.timestamp])
+
+  // Charger les données du graphique depuis l'historique
+  useEffect(() => {
+    const fetchHistory = async () => {
+      if (!pnlData) return
+
+      try {
+        const response = await fetch(`http://localhost:3001/api/vault/pnl-history?period=${period}`)
+        const data = await response.json()
+        
+        if (data.history && data.history.length > 0) {
+          // Transformer les snapshots en format pour le graphique
+          const chartPoints = data.history.map(snapshot => ({
+            time: new Date(snapshot.t).getTime(),
+            value: snapshot.v,
+            percent: snapshot.p
+          }))
+          
+          setChartData(chartPoints)
+        } else {
+          // Si pas d'historique, afficher le point actuel
+          setChartData([{
+            time: new Date().getTime(),
+            value: pnlData.totalUSD || 0,
+            percent: pnlData.pnlPercent || 0
+          }])
+        }
+      } catch (error) {
+        console.error('Error fetching PNL history:', error)
+        // Fallback sur le point actuel
+        setChartData([{
+          time: new Date().getTime(),
+          value: pnlData.totalUSD || 0,
+          percent: pnlData.pnlPercent || 0
+        }])
+      }
+    }
+
+    fetchHistory()
   }, [period, pnlData])
+
 
   // Emojis pour les tokens
   const tokenEmojis = {
@@ -41,7 +92,7 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
 
   // Tokens à afficher
   const displayTokens = ['HYPE', 'ETH', 'BTC', 'USDT','USDC']
-
+  
   const totalUSD = pnlData?.totalUSD || 0
   const pnlAmount = pnlData?.pnlAmount || 0
   const pnlPercent = pnlData?.pnlPercent || 0
@@ -78,10 +129,23 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
           </div>
         </div>
 
-        {/* Price Info */}
-        {pnlData?.prices && (
-          <div className="mt-4 text-xs text-gray-500">
-            Last updated: {pnlData.timestamp ? new Date(pnlData.timestamp).toLocaleString() : 'Never'}
+        {/* Update Info */}
+        {pnlData?.timestamp && (
+          <div className="mt-4 flex items-center gap-4 text-xs">
+            <div className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${
+                lastUpdateText.includes('second') ? 'bg-green-500' :
+                lastUpdateText.includes('minute') && !lastUpdateText.includes('minutes') ? 'bg-yellow-500' :
+                'bg-red-500'
+              }`}></div>
+              <span className="text-gray-500">
+                Updated {lastUpdateText}
+              </span>
+            </div>
+            <span className="text-gray-600">•</span>
+            <span className="text-gray-500">
+              Next update in {nextUpdateIn}s
+            </span>
           </div>
         )}
       </div>
@@ -90,7 +154,7 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
       <div className="bg-[#0a0a0a] rounded-lg p-6">
         {/* Period Tabs */}
         <div className="flex gap-4 mb-6">
-          {['1D', '1W', '1M', '6M', '1Y', 'All'].map(p => (
+          {['1D', '1M', '3M', '6M', '1Y', 'All'].map(p => (
             <button
               key={p}
               onClick={() => setPeriod(p)}
