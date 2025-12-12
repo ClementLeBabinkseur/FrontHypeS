@@ -29,8 +29,8 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
         setLastUpdateText(`${hours} hour${hours > 1 ? 's' : ''} ago`)
       }
 
-      // Calculer le temps avant le prochain update (60 secondes après le dernier)
-      const nextUpdate = 60 - (diffSeconds % 60)
+      // Calculer le temps avant le prochain update (120 secondes après le dernier)
+      const nextUpdate = 120 - (diffSeconds % 120)
       setNextUpdateIn(nextUpdate)
     }
 
@@ -192,6 +192,15 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
                     border: '1px solid #333',
                     borderRadius: '8px',
                     color: '#fff'
+                  }}
+                  labelFormatter={(timestamp) => {
+                    const date = new Date(timestamp)
+                    return date.toLocaleString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })
                   }}
                   formatter={(value) => [`$${value.toFixed(2)}`, 'Value']}
                 />

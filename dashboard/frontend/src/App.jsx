@@ -37,7 +37,7 @@ function App() {
     const interval = setInterval(() => {
       console.log('🔄 Auto-refreshing PNL...')
       refreshVaultPnl(false) // false = utilise le dernier snapshot du backend
-    }, 60000) // 60 secondes
+    }, 120000) // 120 secondes = 2 minutes
 
     return () => clearInterval(interval)
   }, [wallets]) // Dépend de wallets pour détecter l'ajout/suppression du vault

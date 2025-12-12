@@ -25,7 +25,7 @@ console.log(`📁 Data file: ${WALLETS_FILE}`);
 let priceCache = {
   prices: null,
   lastUpdate: null,
-  TTL: 5 * 60 * 1000 // 5 minutes
+  TTL: 2 * 60 * 1000 // 2 minutes
 };
 
 // Mapping des symboles vers IDs CoinGecko
@@ -102,8 +102,7 @@ async function loadWallets() {
       hyperevmTokenContracts: {
         WETH: '',
         WBTC: '',
-        USDT: '',
-        USDC: '',
+        USDT: ''
       },
       vaultSettings: {
         initialInvestmentUSD: 5000,
@@ -915,7 +914,7 @@ async function calculateAndSavePnlSnapshot() {
     const hlBalances = await getHyperliquidBalances(vault.addresses.hyperliquid);
     const evmBalances = await getHyperEVMBalances(vault.addresses.hyperevm);
     
-    const tokens = ['HYPE', 'ETH', 'BTC', 'USDT', 'USDC'];
+    const tokens = ['HYPE', 'ETH', 'BTC', 'USDT'];
     const combined = {};
     
     for (const token of tokens) {
@@ -970,9 +969,9 @@ async function calculateAndSavePnlSnapshot() {
   }
 }
 
-// Démarrer le cron job (toutes les 1 minute)
-console.log('⏰ Starting PNL auto-tracking cron job (every 1 minute)...');
-cron.schedule('* * * * *', () => {
+// Démarrer le cron job (toutes les 2 minutes)
+console.log('⏰ Starting PNL auto-tracking cron job (every 2 minutes)...');
+cron.schedule('*/2 * * * *', () => {
   calculateAndSavePnlSnapshot();
 });
 
