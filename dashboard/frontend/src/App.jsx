@@ -51,6 +51,9 @@ function App() {
         })
 
         if (response.data.valid) {
+          // Configurer axios IMMÉDIATEMENT avec le token
+          axios.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`
+          
           setToken(savedToken)
           setUser(JSON.parse(savedUser))
           setIsAuthenticated(true)
@@ -73,6 +76,9 @@ function App() {
 
   // Handler de login
   const handleLogin = (newToken, newUser) => {
+    // Configurer axios IMMÉDIATEMENT avec le token
+    axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`
+    
     setToken(newToken)
     setUser(newUser)
     setIsAuthenticated(true)
@@ -107,9 +113,13 @@ function App() {
   }, [token])
 
   // ============ DATA FETCHING ============
+  
+  // Charger les wallets seulement si authentifié
   useEffect(() => {
-    loadWallets()
-  }, [])
+    if (isAuthenticated) {
+      loadWallets()
+    }
+  }, [isAuthenticated])
 
   // Auto-refresh du PNL toutes les 60 secondes
   useEffect(() => {
@@ -337,7 +347,7 @@ function App() {
           {/* Logo + Toggle */}
           <div className="flex items-center justify-between mb-8">
             {!isSidebarCollapsed && (
-              <h1 className="text-xl font-bold">VAULT</h1>
+              <h1 className="text-xl font-bold">Welcome</h1>
             )}
             <button
               onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
