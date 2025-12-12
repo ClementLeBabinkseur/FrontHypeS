@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { X, DollarSign, Calendar } from 'lucide-react'
+import { X, DollarSign, Calendar, Receipt } from 'lucide-react'
 
-function VaultSettingsModal({ isOpen, onClose, onSave, currentSettings, currentValue, pnlData }) {
+function VaultSettingsModal({ isOpen, onClose, onSave, currentSettings, currentValue, pnlData, onOpenTransactions }) {
   const [formData, setFormData] = useState({
     initialInvestmentUSD: 5000,
     initialDate: new Date().toISOString().split('T')[0]
@@ -97,6 +97,23 @@ function VaultSettingsModal({ isOpen, onClose, onSave, currentSettings, currentV
             />
             <p className="text-xs text-gray-500 mt-1">
               When did you start tracking this vault
+            </p>
+          </div>
+
+          {/* Manage Transactions Button */}
+          <div>
+            <button
+              onClick={() => {
+                onClose()
+                onOpenTransactions()
+              }}
+              className="w-full py-3 px-4 bg-[#1a1a1a] hover:bg-[#2a2a2a] text-white rounded-lg transition-colors flex items-center justify-center gap-2 border border-[#2a2a2a]"
+            >
+              <Receipt className="w-5 h-5" />
+              Manage Transactions
+            </button>
+            <p className="text-xs text-gray-500 mt-2 text-center">
+              Track deposits and withdrawals for accurate PNL calculation
             </p>
           </div>
 

@@ -5,6 +5,7 @@ import VaultSection from './components/VaultSection_Unified'
 import ExecutorSection from './components/ExecutorSection'
 import AddWalletModal from './components/AddWalletModal_Unified'
 import WalletsManagement from './components/WalletsManagement'
+import TransactionsModal from './components/TransactionsModal'
 
 // En développement: localhost:3001, en production: via proxy Nginx
 const API_URL = import.meta.env.DEV ? 'http://localhost:3001/api' : '/api'
@@ -19,6 +20,8 @@ function App() {
   const [currentView, setCurrentView] = useState('dashboard') // 'dashboard' or 'wallets'
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isTransactionsModalOpen, setIsTransactionsModalOpen] = useState(false)
+  const [transactions, setTransactions] = useState([])
 
   // Charger les wallets au démarrage
   useEffect(() => {
@@ -32,6 +35,7 @@ function App() {
 
     // Fetch initial
     refreshVaultPnl(false)
+    loadTransactions() // Charger les transactions
 
     // Setup interval
     const interval = setInterval(() => {
@@ -101,6 +105,40 @@ function App() {
       await refreshVaultPnl(true)
     } catch (error) {
       console.error('Error saving vault settings:', error)
+      throw error
+    }
+  }
+
+  // Charger les transactions
+  const loadTransactions = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/vault/transactions`)
+      setTransactions(response.data.transactions || [])
+    } catch (error) {
+      console.error('Error loading transactions:', error)
+    }
+  }
+
+  // Ajouter une transaction
+  const addTransaction = async (transactionData) => {
+    try {
+      await axios.post(`${API_URL}/vault/transactions`, transactionData)
+      await loadTransactions()
+      await refreshVaultPnl(true) // Recalculer le PNL
+    } catch (error) {
+      console.error('Error adding transaction:', error)
+      throw error
+    }
+  }
+
+  // Supprimer une transaction
+  const deleteTransaction = async (id) => {
+    try {
+      await axios.delete(`${API_URL}/vault/transactions/${id}`)
+      await loadTransactions()
+      await refreshVaultPnl(true) // Recalculer le PNL
+    } catch (error) {
+      console.error('Error deleting transaction:', error)
       throw error
     }
   }
@@ -303,6 +341,7 @@ function App() {
                   pnlData={vaultPnlData}
                   onRefresh={refreshAllWallets}
                   onSaveSettings={saveVaultSettings}
+                  onOpenTransactions={() => setIsTransactionsModalOpen(true)}
                   onDelete={() => deleteWallet(vaultWallet.id)}
                 />
               ) : (
@@ -355,6 +394,17 @@ function App() {
           onClose={() => setIsAddModalOpen(false)}
           onAdd={addWallet}
           existingVault={!!vaultWallet}
+        />
+      )}
+
+      {/* Transactions Modal */}
+      {isTransactionsModalOpen && (
+        <TransactionsModal
+          isOpen={isTransactionsModalOpen}
+          onClose={() => setIsTransactionsModalOpen(false)}
+          transactions={transactions}
+          onAddTransaction={addTransaction}
+          onDeleteTransaction={deleteTransaction}
         />
       )}
     </div>

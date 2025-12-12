@@ -688,6 +688,80 @@ app.post('/api/vault/settings', async (req, res) => {
   }
 });
 
+// GET toutes les transactions du vault
+app.get('/api/vault/transactions', async (req, res) => {
+  try {
+    const data = await loadWallets();
+    res.json({ transactions: data.vaultTransactions || [] });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST ajouter une transaction
+app.post('/api/vault/transactions', async (req, res) => {
+  try {
+    const { type, amount, date, note } = req.body;
+    
+    if (!type || !['deposit', 'withdrawal'].includes(type)) {
+      return res.status(400).json({ error: 'Invalid transaction type' });
+    }
+    
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: 'Invalid amount' });
+    }
+    
+    const data = await loadWallets();
+    
+    if (!data.vaultTransactions) {
+      data.vaultTransactions = [];
+    }
+    
+    const transaction = {
+      id: Date.now().toString(),
+      type,
+      amount: parseFloat(amount),
+      date: date || new Date().toISOString(),
+      note: note || '',
+      createdAt: new Date().toISOString()
+    };
+    
+    data.vaultTransactions.push(transaction);
+    
+    // Trier par date
+    data.vaultTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    await saveWallets(data);
+    res.json(transaction);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE supprimer une transaction
+app.delete('/api/vault/transactions/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const data = await loadWallets();
+    
+    if (!data.vaultTransactions) {
+      return res.status(404).json({ error: 'No transactions found' });
+    }
+    
+    const initialLength = data.vaultTransactions.length;
+    data.vaultTransactions = data.vaultTransactions.filter(t => t.id !== id);
+    
+    if (data.vaultTransactions.length === initialLength) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
+    
+    await saveWallets(data);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET calculer le PNL du vault
 app.get('/api/vault/pnl', async (req, res) => {
   try {
@@ -745,17 +819,20 @@ app.get('/api/vault/pnl', async (req, res) => {
       }
       
       const settings = updatedData.vaultSettings || { initialInvestmentUSD: 5000 };
-      const pnlAmount = latestSnapshot.v - settings.initialInvestmentUSD;
+      const investmentAtTime = latestSnapshot.i || settings.initialInvestmentUSD;
+      const pnlAmount = latestSnapshot.v - investmentAtTime;
       
       return res.json({
         totalUSD: latestSnapshot.v,
+        investmentAtTime,
         initialInvestmentUSD: settings.initialInvestmentUSD,
         pnlAmount,
         pnlPercent: latestSnapshot.p,
         breakdown,
         prices,
         timestamp: latestSnapshot.t,
-        settings
+        settings,
+        transactions: updatedData.vaultTransactions || []
       });
     }
     
@@ -794,17 +871,20 @@ app.get('/api/vault/pnl', async (req, res) => {
     }
     
     const settings = data.vaultSettings || { initialInvestmentUSD: 5000 };
-    const pnlAmount = latestSnapshot.v - settings.initialInvestmentUSD;
+    const investmentAtTime = latestSnapshot.i || settings.initialInvestmentUSD;
+    const pnlAmount = latestSnapshot.v - investmentAtTime;
     
     res.json({
       totalUSD: latestSnapshot.v,
+      investmentAtTime,
       initialInvestmentUSD: settings.initialInvestmentUSD,
       pnlAmount,
       pnlPercent: latestSnapshot.p,
       breakdown,
       prices,
       timestamp: latestSnapshot.t,
-      settings
+      settings,
+      transactions: data.vaultTransactions || []
     });
   } catch (error) {
     console.error('Error getting PNL:', error);
@@ -889,6 +969,25 @@ app.get('/health', (req, res) => {
 // ============ AUTOMATIC PNL TRACKING ============
 
 /**
+ * Calculer l'investissement total à une date donnée en fonction des transactions
+ */
+function getTotalInvestmentAtDate(transactions, targetDate) {
+  if (!transactions || transactions.length === 0) {
+    return 0;
+  }
+  
+  const target = new Date(targetDate);
+  
+  return transactions
+    .filter(t => new Date(t.date) <= target)
+    .reduce((sum, t) => {
+      return t.type === 'deposit' 
+        ? sum + t.amount 
+        : sum - t.amount;
+    }, 0);
+}
+
+/**
  * Calcule et sauvegarde un snapshot PNL optimisé
  */
 async function calculateAndSavePnlSnapshot() {
@@ -941,13 +1040,20 @@ async function calculateAndSavePnlSnapshot() {
     
     // Calculer le PNL
     const initialInvestment = data.vaultSettings.initialInvestmentUSD;
-    const pnlAmount = totalUSD - initialInvestment;
-    const pnlPercent = initialInvestment > 0 ? (pnlAmount / initialInvestment) * 100 : 0;
     
-    // Créer snapshot optimisé (structure légère)
+    // Si des transactions existent, calculer l'investissement à cette date
+    const investmentAtTime = data.vaultTransactions && data.vaultTransactions.length > 0
+      ? getTotalInvestmentAtDate(data.vaultTransactions, new Date())
+      : initialInvestment;
+    
+    const pnlAmount = totalUSD - investmentAtTime;
+    const pnlPercent = investmentAtTime > 0 ? (pnlAmount / investmentAtTime) * 100 : 0;
+    
+    // Créer snapshot optimisé avec investissement à ce moment
     const snapshot = {
       t: new Date().toISOString(),  // timestamp
       v: parseFloat(totalUSD.toFixed(2)),  // valeur USD
+      i: parseFloat(investmentAtTime.toFixed(2)),  // investment à cette date
       p: parseFloat(pnlPercent.toFixed(2))  // PNL %
     };
     

@@ -3,7 +3,7 @@ import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'rec
 import { Settings } from 'lucide-react'
 import VaultSettingsModal from './VaultSettingsModal'
 
-function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSettings }) {
+function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSettings, onOpenTransactions }) {
   const [period, setPeriod] = useState('1D')
   const [chartData, setChartData] = useState([])
   const [showSettingsModal, setShowSettingsModal] = useState(false)
@@ -382,6 +382,7 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
         currentValue={totalUSD}
         pnlData={pnlData}
         onSave={onSaveSettings}
+        onOpenTransactions={onOpenTransactions}
       />
     </div>
   )
