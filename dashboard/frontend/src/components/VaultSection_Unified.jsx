@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts'
 import { Settings } from 'lucide-react'
+import axios from 'axios'
 import VaultSettingsModal from './VaultSettingsModal'
 
 function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSettings, onOpenTransactions }) {
@@ -46,10 +47,10 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
       if (!pnlData) return
 
       try {
-        // Utiliser la même API_URL que le reste de l'app
+        // Utiliser axios (qui inclut automatiquement le token via App.jsx)
         const API_URL = import.meta.env.DEV ? 'http://localhost:3001/api' : '/api'
-        const response = await fetch(`${API_URL}/vault/pnl-history?period=${period}`)
-        const data = await response.json()
+        const response = await axios.get(`${API_URL}/vault/pnl-history?period=${period}`)
+        const data = response.data
         
         if (data.history && data.history.length > 0) {
           // Transformer les snapshots en format pour le graphique
