@@ -7,6 +7,7 @@ import AddWalletModal from './components/AddWalletModal_Unified'
 import WalletsManagement from './components/WalletsManagement'
 import TransactionsModal from './components/TransactionsModal'
 import LoginPage from './components/LoginPage'
+import ActivitySection from './components/ActivitySection'
 
 // En développement: localhost:3001, en production: via proxy Nginx
 const API_URL = import.meta.env.DEV ? 'http://localhost:3001/api' : '/api'
@@ -23,7 +24,7 @@ function App() {
   const [vaultPnlData, setVaultPnlData] = useState(null)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [currentView, setCurrentView] = useState('dashboard') // 'dashboard' or 'wallets'
+  const [currentView, setCurrentView] = useState('dashboard') // 'dashboard', 'activity' or 'wallets'
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isTransactionsModalOpen, setIsTransactionsModalOpen] = useState(false)
@@ -120,6 +121,14 @@ function App() {
       loadWallets()
     }
   }, [isAuthenticated])
+
+  // Auto-refresh des wallets après chargement (pour refresh page ou reconnexion token)
+  useEffect(() => {
+    if (wallets.length > 0 && isAuthenticated) {
+      console.log('🔄 Auto-refreshing wallets after load...')
+      refreshAllWallets()
+    }
+  }, [wallets.length]) // Se déclenche quand wallets passent de 0 à N
 
   // Auto-refresh du PNL toutes les 60 secondes
   useEffect(() => {
@@ -447,13 +456,15 @@ function App() {
                   <RefreshCw className={`w-6 h-6 text-white ${isRefreshing ? 'animate-spin' : ''}`} />
                 </button>
               )}
-              <button
-                onClick={() => setIsAddModalOpen(true)}
-                className="w-12 h-12 border-2 border-white/20 hover:border-white/40 rounded-lg flex items-center justify-center transition-colors"
-                title="Add wallet"
-              >
-                <Plus className="w-6 h-6 text-white" />
-              </button>
+              {currentView !== 'activity' && (
+                <button
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="w-12 h-12 border-2 border-white/20 hover:border-white/40 rounded-lg flex items-center justify-center transition-colors"
+                  title="Add wallet"
+                >
+                  <Plus className="w-6 h-6 text-white" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -496,13 +507,7 @@ function App() {
           )}
 
           {/* Activity View */}
-          {currentView === 'activity' && (
-            <div className="bg-[#0a0a0a] rounded-lg p-12 text-center">
-              <div className="text-6xl mb-4">📊</div>
-              <h2 className="text-2xl font-bold text-white mb-2">Activity Coming Soon</h2>
-              <p className="text-gray-400">Transaction history and activity logs will be displayed here</p>
-            </div>
-          )}
+          {currentView === 'activity' && <ActivitySection />}
 
           {/* Wallets Management View */}
           {currentView === 'wallets' && (

@@ -651,7 +651,7 @@ app.get('/api/wallets/:id/combined-balances', authenticateToken, async (req, res
     
     // Combiner les balances par token
     const combined = {};
-    const tokens = ['HYPE', 'ETH', 'BTC', 'USDT'];
+    const tokens = ['HYPE', 'ETH', 'BTC', 'USDT', 'USDC'];
     
     for (const token of tokens) {
       const hlBalance = hlBalances.find(b => b.token === token);
@@ -1074,6 +1074,165 @@ app.get('/api/vault/pnl-history', authenticateToken, async (req, res) => {
       period
     });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET l'activité du vault (transactions blockchain)
+app.get('/api/vault/activity', authenticateToken, async (req, res) => {
+  try {
+    const data = await loadWallets();
+    const vault = data.wallets.find(w => w.walletType === 'vault');
+    
+    if (!vault) {
+      return res.status(404).json({ error: 'Vault not found' });
+    }
+    
+    if (!vault.addresses || !vault.addresses.hyperliquid || !vault.addresses.hyperevm) {
+      return res.status(400).json({ error: 'Vault must have both addresses' });
+    }
+    
+    const activities = [];
+    
+    // Récupérer l'historique Hyperliquid (userFills pour les trades)
+    try {
+      console.log('📊 Fetching Hyperliquid activity...');
+      const hlResponse = await axios.post('https://api.hyperliquid.xyz/info', {
+        type: 'userFills',
+        user: vault.addresses.hyperliquid
+      });
+      
+      if (hlResponse.data && Array.isArray(hlResponse.data)) {
+        hlResponse.data.forEach(fill => {
+          activities.push({
+            id: `hl-${fill.time || Date.now()}-${fill.oid || Math.random()}`,
+            type: fill.side === 'B' ? 'buy' : 'sell',
+            category: 'trade',
+            blockchain: 'hyperliquid',
+            asset: fill.coin,
+            amount: Math.abs(parseFloat(fill.sz)),
+            price: parseFloat(fill.px),
+            value: Math.abs(parseFloat(fill.sz) * parseFloat(fill.px)),
+            fee: parseFloat(fill.fee || 0),
+            timestamp: new Date(fill.time).toISOString(),
+            txHash: fill.tid,
+            details: {
+              orderId: fill.oid,
+              closed: fill.closedPnl || '0'
+            }
+          });
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching Hyperliquid fills:', error.message);
+    }
+    
+    // Récupérer l'historique des funding (userFunding)
+    try {
+      console.log('💰 Fetching Hyperliquid funding...');
+      const fundingResponse = await axios.post('https://api.hyperliquid.xyz/info', {
+        type: 'userFunding',
+        user: vault.addresses.hyperliquid
+      });
+      
+      if (fundingResponse.data && Array.isArray(fundingResponse.data)) {
+        fundingResponse.data.forEach(funding => {
+          const fundingAmount = parseFloat(funding.usdc);
+          if (Math.abs(fundingAmount) > 0.01) {
+            activities.push({
+              id: `funding-${funding.time}-${funding.coin}`,
+              type: fundingAmount > 0 ? 'funding_received' : 'funding_paid',
+              category: 'funding',
+              blockchain: 'hyperliquid',
+              asset: funding.coin,
+              amount: Math.abs(fundingAmount),
+              value: Math.abs(fundingAmount),
+              timestamp: new Date(funding.time).toISOString(),
+              details: {
+                fundingRate: funding.fundingRate
+              }
+            });
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching Hyperliquid funding:', error.message);
+    }
+    
+    // Récupérer l'historique des deposits/withdrawals (userNonFundingLedgerUpdates)
+    try {
+      console.log('📥 Fetching Hyperliquid transfers...');
+      const transfersResponse = await axios.post('https://api.hyperliquid.xyz/info', {
+        type: 'userNonFundingLedgerUpdates',
+        user: vault.addresses.hyperliquid
+      });
+      
+      if (transfersResponse.data && Array.isArray(transfersResponse.data)) {
+        transfersResponse.data.forEach(update => {
+          const amount = parseFloat(update.delta?.total || update.delta || 0);
+          if (Math.abs(amount) > 0.01) {
+            activities.push({
+              id: `transfer-${update.time}-${Math.random()}`,
+              type: amount > 0 ? 'deposit' : 'withdrawal',
+              category: 'transfer',
+              blockchain: 'hyperliquid',
+              asset: 'USDC',
+              amount: Math.abs(amount),
+              value: Math.abs(amount),
+              timestamp: new Date(update.time).toISOString(),
+              txHash: update.hash,
+              details: {
+                type: update.type
+              }
+            });
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching Hyperliquid transfers:', error.message);
+    }
+    
+    // Trier par date (plus récent en premier)
+    activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    // Appliquer les filtres depuis query params
+    let filteredActivities = activities;
+    
+    const { category, type, startDate, endDate, limit } = req.query;
+    
+    if (category && category !== 'all') {
+      filteredActivities = filteredActivities.filter(a => a.category === category);
+    }
+    
+    if (type && type !== 'all') {
+      filteredActivities = filteredActivities.filter(a => a.type === type);
+    }
+    
+    if (startDate) {
+      filteredActivities = filteredActivities.filter(a => 
+        new Date(a.timestamp) >= new Date(startDate)
+      );
+    }
+    
+    if (endDate) {
+      filteredActivities = filteredActivities.filter(a => 
+        new Date(a.timestamp) <= new Date(endDate)
+      );
+    }
+    
+    // Limiter le nombre de résultats
+    const maxResults = limit ? parseInt(limit) : 100;
+    filteredActivities = filteredActivities.slice(0, maxResults);
+    
+    console.log(`✅ Activity fetched: ${activities.length} total, ${filteredActivities.length} after filters`);
+    
+    res.json({
+      activities: filteredActivities,
+      total: activities.length,
+      filtered: filteredActivities.length
+    });
+  } catch (error) {
+    console.error('Error fetching vault activity:', error);
     res.status(500).json({ error: error.message });
   }
 });
