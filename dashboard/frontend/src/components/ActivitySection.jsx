@@ -7,14 +7,33 @@ function ActivitySection() {
   const [isLoading, setIsLoading] = useState(true)
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
-  const [dateFilter, setDateFilter] = useState('all')
+  const [dateFilter, setDateFilter] = useState('vault_start')
+  const [tokenFilters, setTokenFilters] = useState([]) // Multi-selection
+  const [limitFilter, setLimitFilter] = useState('100')
   const [totalCount, setTotalCount] = useState(0)
   const [filteredCount, setFilteredCount] = useState(0)
+  const [vaultStartDate, setVaultStartDate] = useState(null)
+
+  // Charger les vault settings au montage pour la date de début
+  useEffect(() => {
+    const loadVaultSettings = async () => {
+      try {
+        const API_URL = import.meta.env.DEV ? 'http://localhost:3001/api' : '/api'
+        const response = await axios.get(`${API_URL}/vault/settings`)
+        if (response.data.initialDate) {
+          setVaultStartDate(response.data.initialDate.split('T')[0]) // Format YYYY-MM-DD
+        }
+      } catch (error) {
+        console.error('Error loading vault settings:', error)
+      }
+    }
+    loadVaultSettings()
+  }, [])
 
   // Charger les activités au montage
   useEffect(() => {
     loadActivities()
-  }, [categoryFilter, dateFilter])
+  }, [categoryFilter, dateFilter, limitFilter])
 
   const loadActivities = async () => {
     setIsLoading(true)
@@ -24,7 +43,11 @@ function ActivitySection() {
       // Construire les query params
       const params = new URLSearchParams()
       if (categoryFilter !== 'all') params.append('category', categoryFilter)
-      if (dateFilter !== 'all') {
+      
+      // Gestion des dates
+      if (dateFilter === 'vault_start' && vaultStartDate) {
+        params.append('startDate', new Date(vaultStartDate).toISOString())
+      } else if (dateFilter !== 'all') {
         const now = new Date()
         let startDate
         switch (dateFilter) {
@@ -40,7 +63,8 @@ function ActivitySection() {
         }
         if (startDate) params.append('startDate', startDate.toISOString())
       }
-      params.append('limit', '200') // Charger plus d'activités
+      
+      params.append('limit', limitFilter)
       
       const response = await axios.get(`${API_URL}/vault/activity?${params.toString()}`)
       setActivities(response.data.activities || [])
@@ -82,16 +106,34 @@ function ActivitySection() {
     a.click()
   }
 
-  // Filtrer par recherche locale
+  // Filtrer par recherche locale et tokens
   const filteredActivities = activities.filter(activity => {
+    // Filtre par tokens (multi-selection)
+    if (tokenFilters.length > 0 && !tokenFilters.includes(activity.asset)) {
+      return false
+    }
+    
+    // Filtre par recherche
     if (!searchTerm) return true
     const search = searchTerm.toLowerCase()
     return (
       activity.asset.toLowerCase().includes(search) ||
       activity.type.toLowerCase().includes(search) ||
-      (activity.txHash && activity.txHash.toLowerCase().includes(search))
+      (activity.txHash && typeof activity.txHash === 'string' && activity.txHash.toLowerCase().includes(search))
     )
   })
+
+  // Obtenir la liste unique des tokens pour le filtre
+  const uniqueTokens = [...new Set(activities.map(a => a.asset))].sort()
+
+  // Toggle token dans le filtre multi-selection
+  const toggleTokenFilter = (token) => {
+    setTokenFilters(prev => 
+      prev.includes(token) 
+        ? prev.filter(t => t !== token)
+        : [...prev, token]
+    )
+  }
 
   // Icônes par type d'activité
   const getActivityIcon = (type, category) => {
@@ -171,48 +213,102 @@ function ActivitySection() {
         </div>
 
         {/* Filtres */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {/* Category Filter */}
-          <div>
-            <label className="block text-xs text-gray-500 mb-2">Category</label>
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-white/30"
-            >
-              <option value="all">All Categories</option>
-              <option value="trade">Trades</option>
-              <option value="transfer">Transfers</option>
-              <option value="funding">Funding</option>
-            </select>
+        <div className="space-y-4">
+          {/* Première ligne */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* Category Filter */}
+            <div>
+              <label className="block text-xs text-gray-500 mb-2">Category</label>
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-white/30"
+              >
+                <option value="all">All Categories</option>
+                <option value="trade">Trades</option>
+                <option value="transfer">Transfers</option>
+                <option value="funding">Funding</option>
+              </select>
+            </div>
+
+            {/* Date Filter */}
+            <div>
+              <label className="block text-xs text-gray-500 mb-2">Time Period</label>
+              <select
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-white/30"
+              >
+                <option value="all">All Time</option>
+                <option value="24h">Last 24 Hours</option>
+                <option value="7d">Last 7 Days</option>
+                <option value="30d">Last 30 Days</option>
+                {vaultStartDate && (
+                  <option value="vault_start">Since Vault Start ({vaultStartDate})</option>
+                )}
+              </select>
+            </div>
+
+            {/* Limit Filter */}
+            <div>
+              <label className="block text-xs text-gray-500 mb-2">Show</label>
+              <select
+                value={limitFilter}
+                onChange={(e) => setLimitFilter(e.target.value)}
+                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-white/30"
+              >
+                <option value="50">50 trades</option>
+                <option value="100">100 trades</option>
+                <option value="200">200 trades</option>
+                <option value="500">500 trades</option>
+                <option value="1000">1000 trades</option>
+              </select>
+            </div>
+
+            {/* Search */}
+            <div>
+              <label className="block text-xs text-gray-500 mb-2">Search</label>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search by asset, type, or hash..."
+                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-white/30"
+              />
+            </div>
           </div>
 
-          {/* Date Filter */}
-          <div>
-            <label className="block text-xs text-gray-500 mb-2">Time Period</label>
-            <select
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-white/30"
-            >
-              <option value="all">All Time</option>
-              <option value="24h">Last 24 Hours</option>
-              <option value="7d">Last 7 Days</option>
-              <option value="30d">Last 30 Days</option>
-            </select>
-          </div>
-
-          {/* Search */}
-          <div className="sm:col-span-2">
-            <label className="block text-xs text-gray-500 mb-2">Search</label>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by asset, type, or hash..."
-              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-white/30"
-            />
-          </div>
+          {/* Token Filter (multi-selection) */}
+          {uniqueTokens.length > 0 && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-2">
+                Tokens {tokenFilters.length > 0 && `(${tokenFilters.length} selected)`}
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {uniqueTokens.map(token => (
+                  <button
+                    key={token}
+                    onClick={() => toggleTokenFilter(token)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                      tokenFilters.includes(token)
+                        ? 'bg-blue-500/20 text-blue-400 border border-blue-500/50'
+                        : 'bg-[#1a1a1a] text-gray-400 border border-[#2a2a2a] hover:border-[#3a3a3a]'
+                    }`}
+                  >
+                    {token}
+                  </button>
+                ))}
+                {tokenFilters.length > 0 && (
+                  <button
+                    onClick={() => setTokenFilters([])}
+                    className="px-3 py-1.5 rounded-lg text-sm font-medium bg-red-500/20 text-red-400 border border-red-500/50 hover:bg-red-500/30 transition-colors"
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

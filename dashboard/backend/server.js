@@ -43,6 +43,66 @@ const COINGECKO_IDS = {
   'USDT': 'tether'
 };
 
+// Mapping des indices Hyperliquid spot vers les noms de tokens
+const HYPERLIQUID_SPOT_INDEX = {
+  '@107': 'HYPE',
+  '@142': 'PURR',
+  '@151': 'JEFF',
+  '@230': 'HFUN',
+  '@254': 'JELLYJELLY',
+  '@0': 'ETH',
+  '@1': 'BTC',
+  '@2': 'SOL',
+  '@3': 'ARB',
+  '@4': 'MATIC',
+  '@5': 'BNB',
+  '@6': 'AVAX',
+  '@7': 'OP',
+  '@8': 'ATOM',
+  '@9': 'NEAR',
+  '@10': 'FTM',
+  '@11': 'DOGE',
+  '@12': 'UNI',
+  '@13': 'LDO',
+  '@14': 'APE',
+  '@15': 'GMX',
+  '@16': 'AAVE',
+  '@17': 'CRV',
+  '@18': 'MKR',
+  '@19': 'SUSHI',
+  '@20': 'COMP',
+  '@21': 'YFI',
+  '@22': 'SNX',
+  '@23': 'LTC',
+  '@24': 'BCH',
+  '@25': 'XRP',
+  '@26': 'ADA',
+  '@27': 'DOT',
+  '@28': 'LINK',
+  '@29': 'TRX',
+  '@30': 'ETC',
+  '@31': 'XLM',
+  '@32': 'ALGO',
+  '@33': 'XMR',
+  '@34': 'VET',
+  '@35': 'ICP',
+  '@36': 'FIL',
+  '@37': 'EOS',
+  '@38': 'THETA',
+  '@39': 'XTZ',
+  '@40': 'HBAR'
+};
+
+// Fonction pour convertir un coin index en nom de token
+function getCoinName(coin) {
+  // Si c'est un index (@XXX), le convertir
+  if (coin.startsWith('@')) {
+    return HYPERLIQUID_SPOT_INDEX[coin] || coin;
+  }
+  // Sinon retourner tel quel (pour les perps: BTC, ETH, etc.)
+  return coin;
+}
+
 // Récupérer les prix depuis CoinGecko
 async function fetchPricesFromCoinGecko() {
   try {
@@ -1109,7 +1169,7 @@ app.get('/api/vault/activity', authenticateToken, async (req, res) => {
             type: fill.side === 'B' ? 'buy' : 'sell',
             category: 'trade',
             blockchain: 'hyperliquid',
-            asset: fill.coin,
+            asset: getCoinName(fill.coin), // Convertir @XXX en nom de token
             amount: Math.abs(parseFloat(fill.sz)),
             price: parseFloat(fill.px),
             value: Math.abs(parseFloat(fill.sz) * parseFloat(fill.px)),
@@ -1144,7 +1204,7 @@ app.get('/api/vault/activity', authenticateToken, async (req, res) => {
               type: fundingAmount > 0 ? 'funding_received' : 'funding_paid',
               category: 'funding',
               blockchain: 'hyperliquid',
-              asset: funding.coin,
+              asset: getCoinName(funding.coin), // Convertir @XXX en nom de token
               amount: Math.abs(fundingAmount),
               value: Math.abs(fundingAmount),
               timestamp: new Date(funding.time).toISOString(),

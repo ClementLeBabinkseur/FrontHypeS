@@ -31,8 +31,8 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
       }
 
       // Calculer le temps avant le prochain update (120 secondes après le dernier)
-      const nextUpdate = 120 - (diffSeconds % 120)
-      setNextUpdateIn(nextUpdate)
+      /*const nextUpdate = 120 - (diffSeconds % 120)
+      setNextUpdateIn(nextUpdate)*/
     }
 
     updateTimestamp()
@@ -144,10 +144,6 @@ function VaultSection({ wallet, combinedBalances, pnlData, onRefresh, onSaveSett
                 Updated {lastUpdateText}
               </span>
             </div>
-            <span className="text-gray-600">•</span>
-            <span className="text-gray-500">
-              Next update in {nextUpdateIn}s
-            </span>
           </div>
         )}
       </div>
