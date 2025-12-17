@@ -1163,26 +1163,41 @@ app.get('/api/vault/activity', authenticateToken, async (req, res) => {
       });
       
       if (hlResponse.data && Array.isArray(hlResponse.data)) {
+        console.log(`📥 Received ${hlResponse.data.length} fills from API`);
+        
         hlResponse.data.forEach(fill => {
+          // Filtrer les fills avec amount trop petit (dust conversions, etc.)
+          const amount = Math.abs(parseFloat(fill.sz));
+          if (amount < 0.001) { // Augmenté de 0.0000001 à 0.001
+            console.log(`⏭️  Skipping dust fill: ${fill.coin} ${amount} (${fill.dir || 'N/A'})`);
+            return;
+          }
+
+          const coinName = getCoinName(fill.coin);
+          
           activities.push({
             id: `hl-${fill.time || Date.now()}-${fill.oid || Math.random()}`,
             type: fill.side === 'B' ? 'buy' : 'sell',
             category: 'trade',
             blockchain: 'hyperliquid',
-            asset: getCoinName(fill.coin), // Convertir @XXX en nom de token
-            amount: Math.abs(parseFloat(fill.sz)),
+            asset: coinName,
+            amount: amount,
             price: parseFloat(fill.px),
-            value: Math.abs(parseFloat(fill.sz) * parseFloat(fill.px)),
+            value: amount * parseFloat(fill.px),
             fee: parseFloat(fill.fee || 0),
             timestamp: new Date(fill.time).toISOString(),
-            txHash: fill.tid,
+            txHash: fill.hash !== '0x0000000000000000000000000000000000000000000000000000000000000000' ? fill.hash : undefined,
             details: {
               orderId: fill.oid,
-              closed: fill.closedPnl || '0'
+              closed: fill.closedPnl || '0',
+              direction: fill.dir, // Pour debug
+              feeToken: fill.feeToken
             }
           });
         });
       }
+      
+      console.log(`✅ Trades fetched: ${activities.filter(a => a.category === 'trade').length}`);
     } catch (error) {
       console.error('Error fetching Hyperliquid fills:', error.message);
     }
@@ -1255,8 +1270,49 @@ app.get('/api/vault/activity', authenticateToken, async (req, res) => {
     // Trier par date (plus récent en premier)
     activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     
+    // Grouper les activités par seconde (même timestamp à la seconde près)
+    const groupedActivities = [];
+    const activityMap = new Map();
+    
+    activities.forEach(activity => {
+      // Créer une clé basée sur timestamp tronqué à la seconde + type + asset
+      const timestampSecond = activity.timestamp.split('.')[0]; // Enlever les millisecondes
+      const groupKey = `${timestampSecond}-${activity.type}-${activity.asset}`;
+      
+      if (!activityMap.has(groupKey)) {
+        // Première activité de ce groupe
+        activityMap.set(groupKey, {
+          ...activity,
+          isGroup: false,
+          fills: [activity] // Garder les fills individuels
+        });
+      } else {
+        // Ajouter à un groupe existant
+        const group = activityMap.get(groupKey);
+        group.isGroup = true;
+        group.fills.push(activity);
+        
+        // Cumuler les montants
+        group.amount += activity.amount;
+        group.value += activity.value;
+        group.fee += activity.fee;
+        
+        // Moyenne pondérée du prix
+        const totalAmount = group.fills.reduce((sum, f) => sum + f.amount, 0);
+        group.price = group.fills.reduce((sum, f) => sum + (f.price * f.amount), 0) / totalAmount;
+      }
+    });
+    
+    // Convertir la Map en array
+    activityMap.forEach(group => {
+      groupedActivities.push(group);
+    });
+    
+    // Re-trier après groupement
+    groupedActivities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
     // Appliquer les filtres depuis query params
-    let filteredActivities = activities;
+    let filteredActivities = groupedActivities;
     
     const { category, type, startDate, endDate, limit } = req.query;
     
