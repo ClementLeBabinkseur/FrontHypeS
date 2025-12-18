@@ -43,64 +43,93 @@ const COINGECKO_IDS = {
   'USDT': 'tether'
 };
 
-// Mapping des indices Hyperliquid spot vers les noms de tokens
-const HYPERLIQUID_SPOT_INDEX = {
-  '@107': 'HYPE',
-  '@142': 'PURR',
-  '@151': 'JEFF',
-  '@230': 'HFUN',
-  '@254': 'JELLYJELLY',
-  '@0': 'ETH',
-  '@1': 'BTC',
-  '@2': 'SOL',
-  '@3': 'ARB',
-  '@4': 'MATIC',
-  '@5': 'BNB',
-  '@6': 'AVAX',
-  '@7': 'OP',
-  '@8': 'ATOM',
-  '@9': 'NEAR',
-  '@10': 'FTM',
-  '@11': 'DOGE',
-  '@12': 'UNI',
-  '@13': 'LDO',
-  '@14': 'APE',
-  '@15': 'GMX',
-  '@16': 'AAVE',
-  '@17': 'CRV',
-  '@18': 'MKR',
-  '@19': 'SUSHI',
-  '@20': 'COMP',
-  '@21': 'YFI',
-  '@22': 'SNX',
-  '@23': 'LTC',
-  '@24': 'BCH',
-  '@25': 'XRP',
-  '@26': 'ADA',
-  '@27': 'DOT',
-  '@28': 'LINK',
-  '@29': 'TRX',
-  '@30': 'ETC',
-  '@31': 'XLM',
-  '@32': 'ALGO',
-  '@33': 'XMR',
-  '@34': 'VET',
-  '@35': 'ICP',
-  '@36': 'FIL',
-  '@37': 'EOS',
-  '@38': 'THETA',
-  '@39': 'XTZ',
-  '@40': 'HBAR'
+// Cache des métadonnées des assets Hyperliquid
+let assetMetaCache = {
+  data: null,
+  lastUpdate: null,
+  TTL: 24 * 60 * 60 * 1000 // 24 heures
 };
 
+// Récupérer les métadonnées des assets depuis Hyperliquid
+async function fetchAssetMeta() {
+  try {
+    const now = Date.now();
+    
+    // Utiliser le cache si valide
+    if (assetMetaCache.data && (now - assetMetaCache.lastUpdate) < assetMetaCache.TTL) {
+      return assetMetaCache.data;
+    }
+    
+    console.log('🔍 Fetching asset metadata from Hyperliquid...');
+    const response = await axios.post('https://api.hyperliquid.xyz/info', {
+      type: 'meta'
+    });
+    
+    if (response.data && response.data.universe) {
+      const mapping = {};
+      
+      // Créer le mapping index → nom
+      response.data.universe.forEach(asset => {
+        if (asset.name && typeof asset.name === 'string') {
+          // Pour les spots: index comme @107
+          mapping[`@${asset.name}`] = asset.name;
+          
+          // Pour les perps: nom direct (BTC, ETH, etc.)
+          mapping[asset.name] = asset.name;
+        }
+      });
+      
+      // Ajouter les tokens spot si disponibles
+      if (response.data.tokens) {
+        response.data.tokens.forEach((token, index) => {
+          if (token && token.name) {
+            mapping[`@${index}`] = token.name;
+          }
+        });
+      }
+      
+      assetMetaCache.data = mapping;
+      assetMetaCache.lastUpdate = now;
+      
+      console.log(`✅ Asset metadata loaded: ${Object.keys(mapping).length} assets`);
+      return mapping;
+    }
+    
+    return {};
+  } catch (error) {
+    console.error('❌ Error fetching asset metadata:', error.message);
+    
+    // Retourner le cache même expiré si disponible
+    if (assetMetaCache.data) {
+      console.log('⚠️  Using expired cache');
+      return assetMetaCache.data;
+    }
+    
+    // Sinon, utiliser le fallback hardcodé
+    return {
+      '@107': 'HYPE',
+      '@142': 'PURR',
+      '@151': 'JEFF',
+      '@230': 'HFUN',
+      '@254': 'JELLYJELLY',
+      'BTC': 'BTC',
+      'ETH': 'ETH',
+      'SOL': 'SOL'
+    };
+  }
+}
+
 // Fonction pour convertir un coin index en nom de token
-function getCoinName(coin) {
+async function getCoinName(coin) {
+  const mapping = await fetchAssetMeta();
+  
   // Si c'est un index (@XXX), le convertir
   if (coin.startsWith('@')) {
-    return HYPERLIQUID_SPOT_INDEX[coin] || coin;
+    return mapping[coin] || coin;
   }
+  
   // Sinon retourner tel quel (pour les perps: BTC, ETH, etc.)
-  return coin;
+  return mapping[coin] || coin;
 }
 
 // Récupérer les prix depuis CoinGecko
@@ -1165,21 +1194,22 @@ app.get('/api/vault/activity', authenticateToken, async (req, res) => {
       if (hlResponse.data && Array.isArray(hlResponse.data)) {
         console.log(`📥 Received ${hlResponse.data.length} fills from API`);
         
-        hlResponse.data.forEach(fill => {
+        for (const fill of hlResponse.data) {
           // Filtrer les fills avec amount trop petit (dust conversions, etc.)
           const amount = Math.abs(parseFloat(fill.sz));
           if (amount < 0.001) { // Augmenté de 0.0000001 à 0.001
             console.log(`⏭️  Skipping dust fill: ${fill.coin} ${amount} (${fill.dir || 'N/A'})`);
-            return;
+            continue;
           }
 
-          const coinName = getCoinName(fill.coin);
+          const coinName = await getCoinName(fill.coin);
           
           activities.push({
             id: `hl-${fill.time || Date.now()}-${fill.oid || Math.random()}`,
             type: fill.side === 'B' ? 'buy' : 'sell',
             category: 'trade',
             blockchain: 'hyperliquid',
+            network: 'Hyperliquid',
             asset: coinName,
             amount: amount,
             price: parseFloat(fill.px),
@@ -1190,11 +1220,11 @@ app.get('/api/vault/activity', authenticateToken, async (req, res) => {
             details: {
               orderId: fill.oid,
               closed: fill.closedPnl || '0',
-              direction: fill.dir, // Pour debug
+              direction: fill.dir,
               feeToken: fill.feeToken
             }
           });
-        });
+        }
       }
       
       console.log(`✅ Trades fetched: ${activities.filter(a => a.category === 'trade').length}`);
@@ -1211,15 +1241,18 @@ app.get('/api/vault/activity', authenticateToken, async (req, res) => {
       });
       
       if (fundingResponse.data && Array.isArray(fundingResponse.data)) {
-        fundingResponse.data.forEach(funding => {
+        for (const funding of fundingResponse.data) {
           const fundingAmount = parseFloat(funding.usdc);
           if (Math.abs(fundingAmount) > 0.01) {
+            const coinName = await getCoinName(funding.coin);
+            
             activities.push({
               id: `funding-${funding.time}-${funding.coin}`,
               type: fundingAmount > 0 ? 'funding_received' : 'funding_paid',
               category: 'funding',
               blockchain: 'hyperliquid',
-              asset: getCoinName(funding.coin), // Convertir @XXX en nom de token
+              network: 'Hyperliquid',
+              asset: coinName,
               amount: Math.abs(fundingAmount),
               value: Math.abs(fundingAmount),
               timestamp: new Date(funding.time).toISOString(),
@@ -1228,7 +1261,7 @@ app.get('/api/vault/activity', authenticateToken, async (req, res) => {
               }
             });
           }
-        });
+        }
       }
     } catch (error) {
       console.error('Error fetching Hyperliquid funding:', error.message);
@@ -1251,6 +1284,7 @@ app.get('/api/vault/activity', authenticateToken, async (req, res) => {
               type: amount > 0 ? 'deposit' : 'withdrawal',
               category: 'transfer',
               blockchain: 'hyperliquid',
+              network: 'Hyperliquid',
               asset: 'USDC',
               amount: Math.abs(amount),
               value: Math.abs(amount),
@@ -1265,6 +1299,49 @@ app.get('/api/vault/activity', authenticateToken, async (req, res) => {
       }
     } catch (error) {
       console.error('Error fetching Hyperliquid transfers:', error.message);
+    }
+    
+    // Récupérer les transactions HyperEVM depuis l'explorer
+    try {
+      console.log('🔗 Fetching HyperEVM transactions...');
+      const evmResponse = await axios.get(
+        `https://api.hypurrscan.io/api/v2/addresses/${vault.addresses.hyperevm}/transactions`,
+        { timeout: 10000 }
+      );
+      
+      if (evmResponse.data && evmResponse.data.items && Array.isArray(evmResponse.data.items)) {
+        evmResponse.data.items.forEach(tx => {
+          // Déterminer si c'est un deposit ou withdrawal
+          const isIncoming = tx.to && tx.to.hash && 
+            tx.to.hash.toLowerCase() === vault.addresses.hyperevm.toLowerCase();
+          
+          const value = parseFloat(tx.value) / 1e18; // Convertir de wei
+          
+          if (value > 0.001) { // Filtrer les micro-transactions
+            activities.push({
+              id: `evm-${tx.hash}`,
+              type: isIncoming ? 'deposit' : 'withdrawal',
+              category: 'transfer',
+              blockchain: 'hyperevm',
+              network: 'HyperEVM',
+              asset: 'HYPE',
+              amount: value,
+              value: value,
+              timestamp: tx.timestamp,
+              txHash: tx.hash,
+              details: {
+                from: tx.from?.hash,
+                to: tx.to?.hash,
+                status: tx.status,
+                gasUsed: tx.gas_used
+              }
+            });
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching HyperEVM transactions:', error.message);
+      // Ne pas bloquer si l'API EVM échoue
     }
     
     // Trier par date (plus récent en premier)

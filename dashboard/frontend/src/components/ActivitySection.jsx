@@ -38,7 +38,6 @@ function ActivitySection() {
     setIsLoading(true)
     try {
       const API_URL = import.meta.env.DEV ? 'http://localhost:3001/api' : '/api'
-      
       const params = new URLSearchParams()
       if (categoryFilter !== 'all') params.append('category', categoryFilter)
       
@@ -47,23 +46,14 @@ function ActivitySection() {
       } else if (dateFilter !== 'all') {
         const now = new Date()
         let startDate
-        switch (dateFilter) {
-          case '24h':
-            startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-            break
-          case '7d':
-            startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-            break
-          case '30d':
-            startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-            break
-        }
+        if (dateFilter === '24h') startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+        else if (dateFilter === '7d') startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+        else if (dateFilter === '30d') startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
         if (startDate) params.append('startDate', startDate.toISOString())
       }
       
       params.append('limit', limitFilter)
-      
-      const response = await axios.get(`${API_URL}/vault/activity?${params.toString()}`)
+      const response = await axios.get(`${API_URL}/vault/activity?${params}`)
       setActivities(response.data.activities || [])
       setTotalCount(response.data.total || 0)
       setFilteredCount(response.data.filtered || 0)
@@ -76,19 +66,19 @@ function ActivitySection() {
   }
 
   const exportToCSV = () => {
-    const headers = ['Date', 'Type', 'Category', 'Asset', 'Amount', 'Price', 'Value', 'Fee', 'Hash']
+    const headers = ['Date', 'Type', 'Category', 'Asset', 'Network', 'Amount', 'Price', 'Value', 'Fee', 'Hash']
     const rows = filteredActivities.map(activity => [
       new Date(activity.timestamp).toLocaleString(),
       activity.type,
       activity.category,
       activity.asset,
+      activity.network || activity.blockchain,
       activity.amount,
       activity.price || '',
       activity.value,
       activity.fee || '',
       activity.txHash || ''
     ])
-
     const csvContent = [headers.join(','), ...rows.map(row => row.join(','))].join('\n')
     const blob = new Blob([csvContent], { type: 'text/csv' })
     const url = window.URL.createObjectURL(blob)
@@ -105,6 +95,7 @@ function ActivitySection() {
     return (
       activity.asset.toLowerCase().includes(search) ||
       activity.type.toLowerCase().includes(search) ||
+      (activity.network && activity.network.toLowerCase().includes(search)) ||
       (activity.txHash && typeof activity.txHash === 'string' && activity.txHash.toLowerCase().includes(search))
     )
   })
@@ -121,6 +112,18 @@ function ActivitySection() {
       newSet.has(activityId) ? newSet.delete(activityId) : newSet.add(activityId)
       return newSet
     })
+  }
+
+  const getExplorerLink = (activity) => {
+    if (!activity.txHash) return null
+    
+    // HyperEVM transactions
+    if (activity.network === 'HyperEVM' || activity.blockchain === 'hyperevm') {
+      return `https://hyperevmscan.io/tx/${activity.txHash}`
+    }
+    
+    // Hyperliquid transactions
+    return `https://hypurrscan.io/tx/${activity.txHash}`
   }
 
   const getActivityIcon = (type, category) => {
@@ -225,6 +228,7 @@ function ActivitySection() {
                   <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
                   <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                   <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Asset</th>
+                  <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Network</th>
                   <th className="px-6 py-4 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
                   <th className="px-6 py-4 text-right text-xs font-medium text-gray-500 uppercase">Price</th>
                   <th className="px-6 py-4 text-right text-xs font-medium text-gray-500 uppercase">Value</th>
@@ -236,37 +240,99 @@ function ActivitySection() {
                 {filteredActivities.map((activity) => {
                   const isExpanded = expandedGroups.has(activity.id)
                   const isGroup = activity.isGroup && activity.fills && activity.fills.length > 1
+                  const explorerLink = getExplorerLink(activity)
+                  
                   return (
                     <>
                       <tr key={activity.id} className="hover:bg-white/5 transition-colors">
                         <td className="px-6 py-4 whitespace-nowrap"><div className="text-sm text-gray-300">{new Date(activity.timestamp).toLocaleDateString()}</div><div className="text-xs text-gray-500">{new Date(activity.timestamp).toLocaleTimeString()}</div></td>
                         <td className="px-6 py-4 whitespace-nowrap"><div className="flex items-center gap-2">{isGroup && <button onClick={() => toggleGroupExpansion(activity.id)} className="text-gray-400 hover:text-white">{isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}</button>}{getActivityIcon(activity.type, activity.category)}<span className={`px-2 py-1 rounded text-xs font-medium ${getTypeBadgeColor(activity.type, activity.category)}`}>{formatType(activity.type)}{isGroup && ` (${activity.fills.length})`}</span></div></td>
                         <td className="px-6 py-4 whitespace-nowrap"><div className="text-sm font-medium text-white">{activity.asset}</div></td>
+                        <td className="px-6 py-4 whitespace-nowrap"><div className="text-xs text-gray-400">{activity.network || activity.blockchain}</div></td>
                         <td className="px-6 py-4 whitespace-nowrap text-right"><div className="text-sm font-mono text-white">{activity.amount.toLocaleString('en-US', { maximumFractionDigits: 6 })}</div></td>
                         <td className="px-6 py-4 whitespace-nowrap text-right">{activity.price ? <div className="text-sm font-mono text-gray-300">${activity.price.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div> : <div className="text-sm text-gray-600">-</div>}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-right"><div className="text-sm font-medium text-white">${activity.value.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div></td>
                         <td className="px-6 py-4 whitespace-nowrap text-right">{activity.fee ? <div className="text-sm text-gray-400">${activity.fee.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div> : <div className="text-sm text-gray-600">-</div>}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-center">{activity.txHash && <a href={`https://explorer.hyperliquid.xyz/tx/${activity.txHash}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300"><ExternalLink className="w-4 h-4" /></a>}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">{explorerLink && <a href={explorerLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300"><ExternalLink className="w-4 h-4" /></a>}</td>
                       </tr>
-                      {isGroup && isExpanded && activity.fills.map((fill, idx) => (
-                        <tr key={`${activity.id}-${idx}`} className="bg-[#0a0a0a]/50">
-                          <td className="px-6 py-2 pl-16 whitespace-nowrap"><div className="text-xs text-gray-500">Fill #{idx + 1}</div></td>
-                          <td className="px-6 py-2"><span className="text-xs text-gray-500">↳</span></td>
-                          <td className="px-6 py-2"><div className="text-xs text-gray-400">{fill.asset}</div></td>
-                          <td className="px-6 py-2 text-right"><div className="text-xs font-mono text-gray-400">{fill.amount.toLocaleString('en-US', { maximumFractionDigits: 6 })}</div></td>
-                          <td className="px-6 py-2 text-right"><div className="text-xs font-mono text-gray-400">${fill.price.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div></td>
-                          <td className="px-6 py-2 text-right"><div className="text-xs text-gray-400">${fill.value.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div></td>
-                          <td className="px-6 py-2 text-right"><div className="text-xs text-gray-400">${fill.fee.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div></td>
-                          <td className="px-6 py-2 text-center">{fill.txHash && <a href={`https://explorer.hyperliquid.xyz/tx/${fill.txHash}`} target="_blank" rel="noopener noreferrer"><ExternalLink className="w-3 h-3 text-blue-400" /></a>}</td>
-                        </tr>
-                      ))}
+                      {isGroup && isExpanded && activity.fills.map((fill, idx) => {
+                        const fillExplorerLink = getExplorerLink(fill)
+                        return (
+                          <tr key={`${activity.id}-${idx}`} className="bg-[#0a0a0a]/50">
+                            <td className="px-6 py-2 pl-16 whitespace-nowrap"><div className="text-xs text-gray-500">Fill #{idx + 1}</div></td>
+                            <td className="px-6 py-2"><span className="text-xs text-gray-500">↳</span></td>
+                            <td className="px-6 py-2"><div className="text-xs text-gray-400">{fill.asset}</div></td>
+                            <td className="px-6 py-2"><div className="text-xs text-gray-500">{fill.network || fill.blockchain}</div></td>
+                            <td className="px-6 py-2 text-right"><div className="text-xs font-mono text-gray-400">{fill.amount.toLocaleString('en-US', { maximumFractionDigits: 6 })}</div></td>
+                            <td className="px-6 py-2 text-right"><div className="text-xs font-mono text-gray-400">${fill.price.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div></td>
+                            <td className="px-6 py-2 text-right"><div className="text-xs text-gray-400">${fill.value.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div></td>
+                            <td className="px-6 py-2 text-right"><div className="text-xs text-gray-400">${fill.fee.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div></td>
+                            <td className="px-6 py-2 text-center">{fillExplorerLink && <a href={fillExplorerLink} target="_blank" rel="noopener noreferrer"><ExternalLink className="w-3 h-3 text-blue-400" /></a>}</td>
+                          </tr>
+                        )
+                      })}
                     </>
                   )
                 })}
               </tbody>
             </table>
           </div>
-        )}
+
+              )/* Mobile Cards */}
+          <div className="lg:hidden divide-y divide-[#1a1a1a]">
+            {filteredActivities.map((activity) => {
+              const isExpanded = expandedGroups.has(activity.id)
+              const isGroup = activity.isGroup && activity.fills && activity.fills.length > 1
+              const explorerLink = getExplorerLink(activity)
+              
+              return (
+                <div key={activity.id} className="p-4 hover:bg-white/5">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      {isGroup && (
+                        <button onClick={() => toggleGroupExpansion(activity.id)} className="text-gray-400">
+                          {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                        </button>
+                      )}
+                      {getActivityIcon(activity.type, activity.category)}
+                      <div>
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${getTypeBadgeColor(activity.type, activity.category)}`}>
+                          {formatType(activity.type)}{isGroup && ` (${activity.fills.length})`}
+                        </span>
+                        <div className="text-xs text-gray-500 mt-1">{new Date(activity.timestamp).toLocaleString()}</div>
+                      </div>
+                    </div>
+                    {explorerLink && <a href={explorerLink} target="_blank" rel="noopener noreferrer" className="text-blue-400"><ExternalLink className="w-4 h-4" /></a>}
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between"><span className="text-sm text-gray-500">Asset</span><span className="text-sm font-medium text-white">{activity.asset}</span></div>
+                    <div className="flex justify-between"><span className="text-sm text-gray-500">Network</span><span className="text-xs text-gray-400">{activity.network || activity.blockchain}</span></div>
+                    <div className="flex justify-between"><span className="text-sm text-gray-500">Amount</span><span className="text-sm font-mono text-white">{activity.amount.toLocaleString('en-US', { maximumFractionDigits: 6 })}</span></div>
+                    {activity.price && <div className="flex justify-between"><span className="text-sm text-gray-500">Price</span><span className="text-sm font-mono text-gray-300">${activity.price.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span></div>}
+                    <div className="flex justify-between"><span className="text-sm text-gray-500">Value</span><span className="text-sm font-medium text-white">${activity.value.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span></div>
+                    {activity.fee && <div className="flex justify-between"><span className="text-sm text-gray-500">Fee</span><span className="text-sm text-gray-400">${activity.fee.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span></div>}
+                  </div>
+
+                  {isGroup && isExpanded && (
+                    <div className="mt-3 pt-3 border-t border-[#1a1a1a] space-y-2">
+                      {activity.fills.map((fill, idx) => (
+                        <div key={idx} className="pl-4 py-2 bg-[#0a0a0a]/50 rounded text-xs">
+                          <div className="flex justify-between mb-1"><span className="text-gray-500">Fill #{idx + 1}</span>{getExplorerLink(fill) && <a href={getExplorerLink(fill)} target="_blank" rel="noopener noreferrer"><ExternalLink className="w-3 h-3 text-blue-400" /></a>}</div>
+                          <div className="space-y-1">
+                            <div className="flex justify-between"><span className="text-gray-500">Amount</span><span className="text-gray-300">{fill.amount.toLocaleString('en-US', { maximumFractionDigits: 6 })}</span></div>
+                            <div className="flex justify-between"><span className="text-gray-500">Price</span><span className="text-gray-300">${fill.price.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span></div>
+                            <div className="flex justify-between"><span className="text-gray-500">Value</span><span className="text-gray-300">${fill.value.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
       </div>
 
       {!isLoading && filteredActivities.length > 0 && (
