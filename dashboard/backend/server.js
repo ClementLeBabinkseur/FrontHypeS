@@ -1004,7 +1004,7 @@ app.get('/api/vault/pnl', authenticateToken, async (req, res) => {
       const hlBalances = await getHyperliquidBalances(vault.addresses.hyperliquid);
       const evmBalances = await getHyperEVMBalances(vault.addresses.hyperevm);
       
-      const tokens = ['HYPE', 'ETH', 'BTC', 'USDT'];
+      const tokens = ['HYPE', 'ETH', 'BTC', 'USDT', 'USDC'];
       const combined = {};
       const breakdown = {};
       
@@ -1016,11 +1016,17 @@ app.get('/api/vault/pnl', authenticateToken, async (req, res) => {
         const evmValue = evmBalance ? parseFloat(evmBalance.balance) : 0;
         const total = hlValue + evmValue;
         
+        // Pour les stablecoins, forcer le prix à 1 USD
+        let price = prices[token] || 0;
+        if (token === 'USDC' || token === 'USDT') {
+          price = 1;
+        }
+        
         combined[token] = total;
         breakdown[token] = {
           amount: total,
-          price: prices[token] || 0,
-          value: total * (prices[token] || 0)
+          price: price,
+          value: total * price
         };
       }
       
@@ -1058,7 +1064,7 @@ app.get('/api/vault/pnl', authenticateToken, async (req, res) => {
     const hlBalances = await getHyperliquidBalances(vault.addresses.hyperliquid);
     const evmBalances = await getHyperEVMBalances(vault.addresses.hyperevm);
     
-    const tokens = ['HYPE', 'ETH', 'BTC', 'USDT'];
+    const tokens = ['HYPE', 'ETH', 'BTC', 'USDT', 'USDC'];
     const breakdown = {};
     
     for (const token of tokens) {
@@ -1069,10 +1075,16 @@ app.get('/api/vault/pnl', authenticateToken, async (req, res) => {
       const evmValue = evmBalance ? parseFloat(evmBalance.balance) : 0;
       const total = hlValue + evmValue;
       
+      // Pour les stablecoins, forcer le prix à 1 USD
+      let price = prices[token] || 0;
+      if (token === 'USDC' || token === 'USDT') {
+        price = 1;
+      }
+      
       breakdown[token] = {
         amount: total,
-        price: prices[token] || 0,
-        value: total * (prices[token] || 0)
+        price: price,
+        value: total * price
       };
     }
     
@@ -1486,20 +1498,26 @@ app.get('/health', (req, res) => {
 /**
  * Calculer l'investissement total à une date donnée en fonction des transactions
  */
-function getTotalInvestmentAtDate(transactions, targetDate) {
+function getTotalInvestmentAtDate(transactions, targetDate, initialInvestment = 0) {
+  // Commencer avec l'investissement initial
+  let total = initialInvestment;
+  
   if (!transactions || transactions.length === 0) {
-    return 0;
+    return total;
   }
   
   const target = new Date(targetDate);
   
-  return transactions
+  // Ajouter/soustraire les transactions
+  const transactionTotal = transactions
     .filter(t => new Date(t.date) <= target)
     .reduce((sum, t) => {
       return t.type === 'deposit' 
         ? sum + t.amount 
         : sum - t.amount;
     }, 0);
+  
+  return total + transactionTotal;
 }
 
 /**
@@ -1528,7 +1546,7 @@ async function calculateAndSavePnlSnapshot() {
     const hlBalances = await getHyperliquidBalances(vault.addresses.hyperliquid);
     const evmBalances = await getHyperEVMBalances(vault.addresses.hyperevm);
     
-    const tokens = ['HYPE', 'ETH', 'BTC', 'USDT'];
+    const tokens = ['HYPE', 'ETH', 'BTC', 'USDT', 'USDC'];
     const combined = {};
     
     for (const token of tokens) {
@@ -1549,7 +1567,13 @@ async function calculateAndSavePnlSnapshot() {
     
     for (const token of tokens) {
       const amount = combined[token] || 0;
-      const price = prices[token] || 0;
+      let price = prices[token] || 0;
+      
+      // Pour les stablecoins, forcer le prix à 1 USD
+      if (token === 'USDC' || token === 'USDT') {
+        price = 1;
+      }
+      
       totalUSD += amount * price;
     }
     
@@ -1558,7 +1582,7 @@ async function calculateAndSavePnlSnapshot() {
     
     // Si des transactions existent, calculer l'investissement à cette date
     const investmentAtTime = data.vaultTransactions && data.vaultTransactions.length > 0
-      ? getTotalInvestmentAtDate(data.vaultTransactions, new Date())
+      ? getTotalInvestmentAtDate(data.vaultTransactions, new Date(), initialInvestment)
       : initialInvestment;
     
     const pnlAmount = totalUSD - investmentAtTime;

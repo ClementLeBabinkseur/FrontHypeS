@@ -9,6 +9,8 @@ function ActivitySection() {
   const [searchTerm, setSearchTerm] = useState('')
   const [dateFilter, setDateFilter] = useState('all')
   const [tokenFilters, setTokenFilters] = useState([])
+  const [networkFilters, setNetworkFilters] = useState([])
+  const [typeFilters, setTypeFilters] = useState([])
   const [limitFilter, setLimitFilter] = useState('100')
   const [totalCount, setTotalCount] = useState(0)
   const [filteredCount, setFilteredCount] = useState(0)
@@ -90,6 +92,8 @@ function ActivitySection() {
 
   const filteredActivities = activities.filter(activity => {
     if (tokenFilters.length > 0 && !tokenFilters.includes(activity.asset)) return false
+    if (networkFilters.length > 0 && !networkFilters.includes(activity.network || activity.blockchain)) return false
+    if (typeFilters.length > 0 && !typeFilters.includes(activity.type)) return false
     if (!searchTerm) return true
     const search = searchTerm.toLowerCase()
     return (
@@ -101,9 +105,19 @@ function ActivitySection() {
   })
 
   const uniqueTokens = [...new Set(activities.map(a => a.asset))].sort()
+  const uniqueNetworks = [...new Set(activities.map(a => a.network || a.blockchain))].sort()
+  const uniqueTypes = [...new Set(activities.map(a => a.type))].sort()
 
   const toggleTokenFilter = (token) => {
     setTokenFilters(prev => prev.includes(token) ? prev.filter(t => t !== token) : [...prev, token])
+  }
+
+  const toggleNetworkFilter = (network) => {
+    setNetworkFilters(prev => prev.includes(network) ? prev.filter(n => n !== network) : [...prev, network])
+  }
+
+  const toggleTypeFilter = (type) => {
+    setTypeFilters(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type])
   }
 
   const toggleGroupExpansion = (activityId) => {
@@ -224,6 +238,30 @@ function ActivitySection() {
                   <button key={token} onClick={() => toggleTokenFilter(token)} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${tokenFilters.includes(token) ? 'bg-blue-500/20 text-blue-400 border border-blue-500/50' : 'bg-[#1a1a1a] text-gray-400 border border-[#2a2a2a] hover:border-[#3a3a3a]'}`}>{token}</button>
                 ))}
                 {tokenFilters.length > 0 && <button onClick={() => setTokenFilters([])} className="px-3 py-1.5 rounded-lg text-sm font-medium bg-red-500/20 text-red-400 border border-red-500/50">Clear</button>}
+              </div>
+            </div>
+          )}
+
+          {uniqueNetworks.length > 0 && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-2">Networks {networkFilters.length > 0 && `(${networkFilters.length} selected)`}</label>
+              <div className="flex flex-wrap gap-2">
+                {uniqueNetworks.map(network => (
+                  <button key={network} onClick={() => toggleNetworkFilter(network)} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${networkFilters.includes(network) ? 'bg-purple-500/20 text-purple-400 border border-purple-500/50' : 'bg-[#1a1a1a] text-gray-400 border border-[#2a2a2a] hover:border-[#3a3a3a]'}`}>{network}</button>
+                ))}
+                {networkFilters.length > 0 && <button onClick={() => setNetworkFilters([])} className="px-3 py-1.5 rounded-lg text-sm font-medium bg-red-500/20 text-red-400 border border-red-500/50">Clear</button>}
+              </div>
+            </div>
+          )}
+
+          {uniqueTypes.length > 0 && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-2">Types {typeFilters.length > 0 && `(${typeFilters.length} selected)`}</label>
+              <div className="flex flex-wrap gap-2">
+                {uniqueTypes.map(type => (
+                  <button key={type} onClick={() => toggleTypeFilter(type)} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${typeFilters.includes(type) ? 'bg-green-500/20 text-green-400 border border-green-500/50' : 'bg-[#1a1a1a] text-gray-400 border border-[#2a2a2a] hover:border-[#3a3a3a]'}`}>{formatType(type)}</button>
+                ))}
+                {typeFilters.length > 0 && <button onClick={() => setTypeFilters([])} className="px-3 py-1.5 rounded-lg text-sm font-medium bg-red-500/20 text-red-400 border border-red-500/50">Clear</button>}
               </div>
             </div>
           )}
