@@ -909,7 +909,7 @@ app.post('/api/vault/transactions', authenticateToken, async (req, res) => {
   try {
     const { type, amount, date, note } = req.body;
     
-    if (!type || !['deposit', 'withdrawal'].includes(type)) {
+    if (!type || !['deposit', 'withdrawal', 'profit'].includes(type)) {
       return res.status(400).json({ error: 'Invalid transaction type' });
     }
     
@@ -1487,6 +1487,125 @@ app.get('/api/vault/activity', authenticateToken, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// ============ BOT PERFORMANCE ROUTES ============
+
+// GET performance stats du bot
+app.get('/api/bot/performance', authenticateToken, async (req, res) => {
+  try {
+    const data = await loadWallets();
+    
+    // Récupérer uniquement les transactions de type "profit"
+    const profitTrades = (data.vaultTransactions || [])
+      .filter(t => t.type === 'profit')
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    if (profitTrades.length === 0) {
+      return res.json({
+        totalProfit: 0,
+        totalTrades: 0,
+        winRate: 0,
+        avgProfitPerTrade: 0,
+        bestTrade: 0,
+        worstTrade: 0,
+        profitByDay: [],
+        profitByWeek: [],
+        profitByMonth: [],
+        recentTrades: []
+      });
+    }
+    
+    // Calculer le profit total
+    const totalProfit = profitTrades.reduce((sum, t) => sum + t.amount, 0);
+    const totalTrades = profitTrades.length;
+    
+    // Win rate (trades > 0)
+    const winningTrades = profitTrades.filter(t => t.amount > 0).length;
+    const winRate = (winningTrades / totalTrades) * 100;
+    
+    // Moyenne par trade
+    const avgProfitPerTrade = totalProfit / totalTrades;
+    
+    // Best & Worst trade
+    const profits = profitTrades.map(t => t.amount);
+    const bestTrade = Math.max(...profits);
+    const worstTrade = Math.min(...profits);
+    
+    // Grouper par jour
+    const profitByDay = {};
+    const profitByWeek = {};
+    const profitByMonth = {};
+    
+    profitTrades.forEach(trade => {
+      const date = new Date(trade.date);
+      
+      // Par jour (YYYY-MM-DD)
+      const dayKey = date.toISOString().split('T')[0];
+      profitByDay[dayKey] = (profitByDay[dayKey] || 0) + trade.amount;
+      
+      // Par semaine (YYYY-WW)
+      const weekNumber = getWeekNumber(date);
+      const weekKey = `${date.getFullYear()}-W${weekNumber.toString().padStart(2, '0')}`;
+      profitByWeek[weekKey] = (profitByWeek[weekKey] || 0) + trade.amount;
+      
+      // Par mois (YYYY-MM)
+      const monthKey = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+      profitByMonth[monthKey] = (profitByMonth[monthKey] || 0) + trade.amount;
+    });
+    
+    // Convertir en arrays pour le graphique
+    const profitByDayArray = Object.entries(profitByDay).map(([date, profit]) => ({
+      date,
+      profit: parseFloat(profit.toFixed(2)),
+      cumulative: 0 // Sera calculé après
+    })).sort((a, b) => a.date.localeCompare(b.date));
+    
+    // Calculer le cumulatif
+    let cumulative = 0;
+    profitByDayArray.forEach(item => {
+      cumulative += item.profit;
+      item.cumulative = parseFloat(cumulative.toFixed(2));
+    });
+    
+    const profitByWeekArray = Object.entries(profitByWeek).map(([week, profit]) => ({
+      week,
+      profit: parseFloat(profit.toFixed(2))
+    })).sort((a, b) => a.week.localeCompare(b.week));
+    
+    const profitByMonthArray = Object.entries(profitByMonth).map(([month, profit]) => ({
+      month,
+      profit: parseFloat(profit.toFixed(2))
+    })).sort((a, b) => a.month.localeCompare(b.month));
+    
+    // 20 derniers trades
+    const recentTrades = profitTrades.slice(-20).reverse();
+    
+    res.json({
+      totalProfit: parseFloat(totalProfit.toFixed(2)),
+      totalTrades,
+      winRate: parseFloat(winRate.toFixed(2)),
+      avgProfitPerTrade: parseFloat(avgProfitPerTrade.toFixed(2)),
+      bestTrade: parseFloat(bestTrade.toFixed(2)),
+      worstTrade: parseFloat(worstTrade.toFixed(2)),
+      profitByDay: profitByDayArray,
+      profitByWeek: profitByWeekArray,
+      profitByMonth: profitByMonthArray,
+      recentTrades
+    });
+  } catch (error) {
+    console.error('Error fetching bot performance:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Helper: Get ISO week number
+function getWeekNumber(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
 
 // Health check
 app.get('/health', (req, res) => {
