@@ -130,6 +130,7 @@ function ActivitySection() {
     if (category === 'trade') return type === 'buy' ? <TrendingUp className="w-5 h-5 text-green-500" /> : <TrendingDown className="w-5 h-5 text-red-500" />
     if (category === 'transfer') return type === 'deposit' ? <ArrowDownLeft className="w-5 h-5 text-blue-500" /> : <ArrowUpRight className="w-5 h-5 text-orange-500" />
     if (category === 'funding') return <Zap className="w-5 h-5 text-yellow-500" />
+    if (category === 'defi') return <Zap className="w-5 h-5 text-purple-500" />
     return <div className="w-5 h-5 bg-gray-600 rounded-full" />
   }
 
@@ -137,11 +138,24 @@ function ActivitySection() {
     if (category === 'trade') return type === 'buy' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
     if (category === 'transfer') return type === 'deposit' ? 'bg-blue-500/20 text-blue-400' : 'bg-orange-500/20 text-orange-400'
     if (category === 'funding') return type === 'funding_received' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-purple-500/20 text-purple-400'
+    if (category === 'defi') return 'bg-purple-500/20 text-purple-400'
     return 'bg-gray-500/20 text-gray-400'
   }
 
   const formatType = (type) => {
-    const types = { buy: 'Buy', sell: 'Sell', deposit: 'Deposit', withdrawal: 'Withdrawal', funding_received: 'Funding +', funding_paid: 'Funding -' }
+    const types = { 
+      buy: 'Buy', 
+      sell: 'Sell', 
+      deposit: 'Deposit', 
+      withdrawal: 'Withdrawal', 
+      funding_received: 'Funding +', 
+      funding_paid: 'Funding -',
+      approve: 'Approve',
+      swap: 'Swap',
+      add_liquidity: 'Add Liquidity',
+      multicall: 'Multicall',
+      contract_interaction: 'Contract'
+    }
     return types[type] || type
   }
 
@@ -174,6 +188,7 @@ function ActivitySection() {
                 <option value="trade">Trades</option>
                 <option value="transfer">Transfers</option>
                 <option value="funding">Funding</option>
+                <option value="defi">DeFi</option>
               </select>
             </div>
             <div>
@@ -337,9 +352,9 @@ function ActivitySection() {
 
       {!isLoading && filteredActivities.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {['trade', 'transfer', 'funding'].map(cat => {
+          {['trade', 'transfer', 'funding', 'defi'].map(cat => {
             const count = activities.filter(a => a.category === cat).length
-            return count > 0 ? <div key={cat} className="bg-[#0a0a0a] rounded-lg p-4"><div className="text-xs text-gray-500 uppercase mb-1">{cat}s</div><div className="text-2xl font-bold text-white">{count}</div></div> : null
+            return count > 0 ? <div key={cat} className="bg-[#0a0a0a] rounded-lg p-4"><div className="text-xs text-gray-500 uppercase mb-1">{cat === 'defi' ? 'DeFi' : `${cat}s`}</div><div className="text-2xl font-bold text-white">{count}</div></div> : null
           })}
           <div className="bg-[#0a0a0a] rounded-lg p-4"><div className="text-xs text-gray-500 uppercase mb-1">Total</div><div className="text-2xl font-bold text-white">{totalCount}</div></div>
         </div>

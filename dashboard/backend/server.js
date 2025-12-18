@@ -1301,43 +1301,89 @@ app.get('/api/vault/activity', authenticateToken, async (req, res) => {
       console.error('Error fetching Hyperliquid transfers:', error.message);
     }
     
-    // Récupérer les transactions HyperEVM depuis l'explorer
+    // Récupérer les transactions HyperEVM via Etherscan API (chainid 999)
     try {
       console.log('🔗 Fetching HyperEVM transactions...');
-      const evmResponse = await axios.get(
-        `https://api.hypurrscan.io/api/v2/addresses/${vault.addresses.hyperevm}/transactions`,
-        { timeout: 10000 }
-      );
       
-      if (evmResponse.data && evmResponse.data.items && Array.isArray(evmResponse.data.items)) {
-        evmResponse.data.items.forEach(tx => {
-          // Déterminer si c'est un deposit ou withdrawal
-          const isIncoming = tx.to && tx.to.hash && 
-            tx.to.hash.toLowerCase() === vault.addresses.hyperevm.toLowerCase();
+      const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || '';
+      if (!ETHERSCAN_API_KEY) {
+        console.warn('⚠️  ETHERSCAN_API_KEY not set, skipping EVM transactions');
+      } else {
+        const evmResponse = await axios.get('https://api.etherscan.io/v2/api', {
+          params: {
+            chainid: 999,
+            module: 'account',
+            action: 'txlist',
+            address: vault.addresses.hyperevm,
+            startblock: 0,
+            endblock: 99999999,
+            sort: 'desc',
+            apikey: ETHERSCAN_API_KEY
+          },
+          timeout: 15000
+        });
+        
+        if (evmResponse.data.status === '1' && Array.isArray(evmResponse.data.result)) {
+          console.log(`📥 Received ${evmResponse.data.result.length} EVM transactions`);
           
-          const value = parseFloat(tx.value) / 1e18; // Convertir de wei
-          
-          if (value > 0.001) { // Filtrer les micro-transactions
+          evmResponse.data.result.forEach(tx => {
+            const value = parseFloat(tx.value) / 1e18; // Convertir de wei à HYPE
+            const isIncoming = tx.to && tx.to.toLowerCase() === vault.addresses.hyperevm.toLowerCase();
+            
+            // Déterminer le type de transaction
+            let type, category, asset;
+            
+            if (tx.methodId === '0x' || !tx.methodId) {
+              // Transfer HYPE simple
+              if (value < 0.001) return; // Filtrer micro-transactions
+              type = isIncoming ? 'deposit' : 'withdrawal';
+              category = 'transfer';
+              asset = 'HYPE';
+            } else {
+              // Interaction smart contract (DeFi)
+              type = 'contract_interaction';
+              category = 'defi';
+              asset = 'HYPE';
+              
+              // Détecter le type d'interaction selon methodId
+              if (tx.methodId === '0x095ea7b3') {
+                type = 'approve';
+              } else if (tx.methodId === '0xa22c27fe') {
+                type = 'swap';
+              } else if (tx.methodId === '0x219f5d17') {
+                type = 'add_liquidity';
+              } else if (tx.methodId === '0xac9650d8') {
+                type = 'multicall';
+              }
+            }
+            
             activities.push({
               id: `evm-${tx.hash}`,
-              type: isIncoming ? 'deposit' : 'withdrawal',
-              category: 'transfer',
+              type: type,
+              category: category,
               blockchain: 'hyperevm',
               network: 'HyperEVM',
-              asset: 'HYPE',
+              asset: asset,
               amount: value,
               value: value,
-              timestamp: tx.timestamp,
+              timestamp: new Date(parseInt(tx.timeStamp) * 1000).toISOString(),
               txHash: tx.hash,
               details: {
-                from: tx.from?.hash,
-                to: tx.to?.hash,
-                status: tx.status,
-                gasUsed: tx.gas_used
+                from: tx.from,
+                to: tx.to,
+                gasUsed: tx.gasUsed,
+                gasPrice: tx.gasPrice,
+                methodId: tx.methodId,
+                functionName: tx.functionName || 'Unknown',
+                status: tx.txreceipt_status === '1' ? 'success' : 'failed'
               }
             });
-          }
-        });
+          });
+          
+          console.log(`✅ EVM transactions added: ${activities.filter(a => a.blockchain === 'hyperevm').length}`);
+        } else if (evmResponse.data.status === '0') {
+          console.log('ℹ️  No EVM transactions found or API error:', evmResponse.data.message);
+        }
       }
     } catch (error) {
       console.error('Error fetching HyperEVM transactions:', error.message);
