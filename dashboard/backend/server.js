@@ -1490,6 +1490,81 @@ app.get('/api/vault/activity', authenticateToken, async (req, res) => {
 
 // ============ BOT PERFORMANCE ROUTES ============
 
+// POST log arbitrage from bot
+app.post('/api/bot/arbitrage', authenticateToken, async (req, res) => {
+  try {
+    const { profit, pair, buyPrice, sellPrice, buyExchange, sellExchange, volume, txHash } = req.body;
+    
+    // Validation
+    if (profit === undefined || profit === null) {
+      return res.status(400).json({ error: 'Profit is required' });
+    }
+    
+    /*if (!pair) {
+      return res.status(400).json({ error: 'Pair is required (e.g. HYPE/USDC)' });
+    }*/
+    
+    const data = await loadWallets();
+    
+    if (!data.vaultTransactions) {
+      data.vaultTransactions = [];
+    }
+    
+    // Créer la note avec toutes les infos disponibles
+    let note = pair;
+    if (buyPrice && sellPrice) {
+      note += ` | Buy @ $${buyPrice}`;
+      if (buyExchange) note += ` (${buyExchange})`;
+      note += `, Sell @ $${sellPrice}`;
+      if (sellExchange) note += ` (${sellExchange})`;
+    }
+    if (volume) {
+      note += ` | Vol: ${volume}`;
+    }
+    if (txHash) {
+      note += ` | TX: ${txHash.slice(0, 8)}...`;
+    }
+    
+    const transaction = {
+      id: Date.now().toString(),
+      type: 'profit',
+      amount: parseFloat(profit),
+      date: new Date().toISOString(),
+      note: note,
+      createdAt: new Date().toISOString(),
+      // Métadonnées additionnelles pour analytics
+      metadata: {
+        pair: pair || null,
+        buyPrice: buyPrice ? parseFloat(buyPrice) : null,
+        sellPrice: sellPrice ? parseFloat(sellPrice) : null,
+        buyExchange,
+        sellExchange,
+        volume: volume ? parseFloat(volume) : null,
+        txHash,
+        source: 'bot'
+      }
+    };
+    
+    data.vaultTransactions.push(transaction);
+    
+    // Trier par date
+    data.vaultTransactions.sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    await saveWallets(data);
+    
+    console.log(`✅ Arbitrage logged: ${pair} → $${profit.toFixed(2)} profit`);
+    
+    res.json({ 
+      success: true, 
+      transaction,
+      message: 'Arbitrage logged successfully' 
+    });
+  } catch (error) {
+    console.error('Error logging arbitrage:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET performance stats du bot
 app.get('/api/bot/performance', authenticateToken, async (req, res) => {
   try {
