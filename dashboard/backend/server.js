@@ -183,6 +183,120 @@ async function saveWallets(data) {
   await fs.writeFile(WALLETS_FILE, JSON.stringify(data, null, 2));
 }
 
+// ============ DISCORD NOTIFICATIONS ============
+
+/**
+ * Envoyer une notification Discord via Webhook
+ * @param {string} message - Le message à envoyer
+ * @param {string} type - Type de notification: 'info', 'success', 'warning', 'error'
+ * @param {object} embed - Embed Discord optionnel pour des notifications riches
+ */
+async function sendDiscordNotification(message, type = 'info', embed = null) {
+  try {
+    const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
+    
+    // Si pas de webhook configuré, skip silencieusement
+    if (!webhookUrl) {
+      console.log('⚠️  Discord webhook not configured, skipping notification');
+      return;
+    }
+    
+    // Couleurs selon le type
+    const colors = {
+      info: 3447003,      // Bleu
+      success: 3066993,   // Vert
+      warning: 16776960,  // Jaune
+      error: 15158332     // Rouge
+    };
+    
+    // Emojis selon le type
+    const emojis = {
+      info: 'ℹ️',
+      success: '✅',
+      warning: '⚠️',
+      error: '❌'
+    };
+    
+    // Payload Discord
+    const payload = {
+      username: 'HyperBot Dashboard',
+      avatar_url: 'https://i.imgur.com/AfFp7pu.png', // Logo Hyperliquid (optionnel)
+    };
+    
+    // Si embed personnalisé fourni, l'utiliser
+    if (embed) {
+      payload.embeds = [embed];
+    } else {
+      // Sinon, créer un embed simple
+      payload.embeds = [{
+        color: colors[type],
+        description: `${emojis[type]} ${message}`,
+        timestamp: new Date().toISOString(),
+        footer: {
+          text: 'HyperBot Dashboard'
+        }
+      }];
+    }
+    
+    // Envoyer le webhook
+    await axios.post(webhookUrl, payload);
+    console.log(`📢 Discord notification sent: ${type} - ${message.substring(0, 50)}...`);
+  } catch (error) {
+    // Ne pas crasher si Discord fail
+    console.error('❌ Discord notification failed:', error.message);
+  }
+}
+
+/**
+ * Créer un embed Discord riche pour les notifications de vault
+ */
+function createVaultRefreshEmbed(vaultData) {
+  const { totalUSD, pnlAmount, pnlPercent, breakdown } = vaultData;
+  
+  // Créer les fields pour chaque token
+  const fields = [];
+  if (breakdown) {
+    Object.entries(breakdown).forEach(([token, data]) => {
+      if (data.amount > 0.001) {
+        fields.push({
+          name: token,
+          value: `${data.amount.toFixed(4)} ($${data.value.toFixed(2)})`,
+          inline: true
+        });
+      }
+    });
+  }
+  
+  const color = pnlPercent >= 0 ? 3066993 : 15158332; // Vert si positif, rouge si négatif
+  
+  return {
+    color: color,
+    title: '🔄 Vault Refreshed',
+    fields: [
+      {
+        name: '💰 Total Value',
+        value: `$${totalUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        inline: true
+      },
+      {
+        name: '📊 PNL',
+        value: `${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}% ($${pnlAmount >= 0 ? '+' : ''}${pnlAmount.toFixed(2)})`,
+        inline: true
+      },
+      {
+        name: '\u200B', // Separator vide
+        value: '\u200B',
+        inline: false
+      },
+      ...fields
+    ],
+    timestamp: new Date().toISOString(),
+    footer: {
+      text: 'HyperBot Dashboard'
+    }
+  };
+}
+
 // ============ HYPERLIQUID NATIVE API ============
 
 async function getHyperliquidBalances(address) {
@@ -1015,7 +1129,7 @@ app.get('/api/vault/pnl', authenticateToken, async (req, res) => {
       const investmentAtTime = latestSnapshot.i || settings.initialInvestmentUSD;
       const pnlAmount = latestSnapshot.v - investmentAtTime;
       
-      return res.json({
+      const responseData = {
         totalUSD: latestSnapshot.v,
         investmentAtTime,
         initialInvestmentUSD: settings.initialInvestmentUSD,
@@ -1026,7 +1140,18 @@ app.get('/api/vault/pnl', authenticateToken, async (req, res) => {
         timestamp: latestSnapshot.t,
         settings,
         transactions: updatedData.vaultTransactions || []
-      });
+      };
+      
+      // 🔔 Envoyer notification Discord lors du refresh
+      try {
+        const embed = createVaultRefreshEmbed(responseData);
+        await sendDiscordNotification('Vault refreshed', 'info', embed);
+      } catch (error) {
+        console.error('Discord notification failed:', error.message);
+        // Continue même si Discord fail
+      }
+      
+      return res.json(responseData);
     }
     
     // Sinon, retourner le dernier snapshot disponible
