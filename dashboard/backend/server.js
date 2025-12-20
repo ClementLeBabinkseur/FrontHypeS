@@ -110,6 +110,11 @@ async function fetchPricesFromCoinGecko() {
       }
     }
     
+    // WHYPE = prix de HYPE (wrapped 1:1)
+    if (prices['HYPE']) {
+      prices['WHYPE'] = prices['HYPE'];
+    }
+    
     console.log('💰 Prices fetched:', prices);
     return prices;
   } catch (error) {
@@ -118,6 +123,7 @@ async function fetchPricesFromCoinGecko() {
     // Fallback prices en cas d'erreur
     return {
       'HYPE': 25.0,
+      'WHYPE': 25.0,  // Wrapped HYPE (1:1)
       'ETH': 2300.0,
       'BTC': 43000.0,
       'USDT': 1.0,
@@ -346,6 +352,7 @@ async function getHyperEVMBalances(address) {
 
     // Adresses hardcodées des tokens ERC-20 sur HyperEVM
     const TOKEN_CONTRACTS = [
+      { address: '0x5555555555555555555555555555555555555555', expectedSymbol: 'WHYPE' }, // Wrapped HYPE
       { address: '0xb8ce59fc3717ada4c02eadf9682a9e934f625ebb', expectedSymbol: 'ETH' },
       { address: '0x9FDBdA0A5e284c32744D2f17Ee5c74B284993463', expectedSymbol: 'BTC' },
       { address: '0xbe6727b535545c67d5caa73dea54865b92cf7907', expectedSymbol: 'USDT' }
@@ -353,6 +360,7 @@ async function getHyperEVMBalances(address) {
 
     // Mapping des symboles pour normaliser
     const SYMBOL_MAPPING = {
+      'WHYPE': 'HYPE',  // Wrapped HYPE → combiné avec HYPE natif
       'UETH': 'ETH',
       'WETH': 'ETH',
       'UBTC': 'BTC',
@@ -370,11 +378,23 @@ async function getHyperEVMBalances(address) {
         // Normaliser le symbole
         const normalizedSymbol = SYMBOL_MAPPING[result.symbol] || result.symbol;
         
-        balances.push({
-          token: normalizedSymbol,
-          balance: result.balance.toFixed(6),
-          usdValue: null
-        });
+        // Chercher si on a déjà ce token (pour combiner HYPE + WHYPE par exemple)
+        const existingBalance = balances.find(b => b.token === normalizedSymbol);
+        
+        if (existingBalance) {
+          // Combiner les balances
+          const currentBalance = parseFloat(existingBalance.balance);
+          const newBalance = currentBalance + result.balance;
+          existingBalance.balance = newBalance.toFixed(6);
+          console.log(`🔗 Combined ${normalizedSymbol}: ${currentBalance} + ${result.balance} = ${newBalance}`);
+        } else {
+          // Nouveau token
+          balances.push({
+            token: normalizedSymbol,
+            balance: result.balance.toFixed(6),
+            usdValue: null
+          });
+        }
       }
     }
 

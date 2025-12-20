@@ -301,7 +301,17 @@ function ActivitySection() {
                         <td className="px-6 py-4 whitespace-nowrap"><div className="text-sm text-gray-300">{new Date(activity.timestamp).toLocaleDateString()}</div><div className="text-xs text-gray-500">{new Date(activity.timestamp).toLocaleTimeString()}</div></td>
                         <td className="px-6 py-4 whitespace-nowrap"><div className="flex items-center gap-2">{isGroup && <button onClick={() => toggleGroupExpansion(activity.id)} className="text-gray-400 hover:text-white">{isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}</button>}{getActivityIcon(activity.type, activity.category)}<span className={`px-2 py-1 rounded text-xs font-medium ${getTypeBadgeColor(activity.type, activity.category)}`}>{formatType(activity.type)}{isGroup && ` (${activity.fills.length})`}</span></div></td>
                         <td className="px-6 py-4 whitespace-nowrap"><div className="text-sm font-medium text-white">{activity.asset}</div></td>
-                        <td className="px-6 py-4 whitespace-nowrap"><div className="text-xs text-gray-400">{activity.network || activity.blockchain}</div></td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                            activity.network === 'Hyperliquid' || activity.blockchain === 'Hyperliquid' 
+                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' 
+                              : activity.network === 'HyperEVM' || activity.blockchain === 'HyperEVM'
+                              ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
+                              : 'bg-gray-500/10 text-gray-400 border border-gray-500/30'
+                          }`}>
+                            {activity.network || activity.blockchain}
+                          </span>
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right"><div className="text-sm font-mono text-white">{activity.amount.toLocaleString('en-US', { maximumFractionDigits: 6 })}</div></td>
                         <td className="px-6 py-4 whitespace-nowrap text-right">{activity.price ? <div className="text-sm font-mono text-gray-300">${activity.price.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div> : <div className="text-sm text-gray-600">-</div>}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-right"><div className="text-sm font-medium text-white">${activity.value.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div></td>
@@ -315,7 +325,17 @@ function ActivitySection() {
                             <td className="px-6 py-2 pl-16 whitespace-nowrap"><div className="text-xs text-gray-500">Fill #{idx + 1}</div></td>
                             <td className="px-6 py-2"><span className="text-xs text-gray-500">↳</span></td>
                             <td className="px-6 py-2"><div className="text-xs text-gray-400">{fill.asset}</div></td>
-                            <td className="px-6 py-2"><div className="text-xs text-gray-500">{fill.network || fill.blockchain}</div></td>
+                            <td className="px-6 py-2">
+                              <span className={`px-2 py-1 rounded text-xs ${
+                                fill.network === 'Hyperliquid' || fill.blockchain === 'Hyperliquid' 
+                                  ? 'bg-emerald-500/10 text-emerald-400' 
+                                  : fill.network === 'HyperEVM' || fill.blockchain === 'HyperEVM'
+                                  ? 'bg-blue-500/10 text-blue-400 border'
+                                  : 'bg-gray-500/10 text-gray-400'
+                              }`}>
+                                {fill.network || fill.blockchain}
+                              </span>
+                            </td>
                             <td className="px-6 py-2 text-right"><div className="text-xs font-mono text-gray-400">{fill.amount.toLocaleString('en-US', { maximumFractionDigits: 6 })}</div></td>
                             <td className="px-6 py-2 text-right"><div className="text-xs font-mono text-gray-400">${fill.price.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div></td>
                             <td className="px-6 py-2 text-right"><div className="text-xs text-gray-400">${fill.value.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div></td>
@@ -360,7 +380,18 @@ function ActivitySection() {
 
                   <div className="space-y-2">
                     <div className="flex justify-between"><span className="text-sm text-gray-500">Asset</span><span className="text-sm font-medium text-white">{activity.asset}</span></div>
-                    <div className="flex justify-between"><span className="text-sm text-gray-500">Network</span><span className="text-xs text-gray-400">{activity.network || activity.blockchain}</span></div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-500">Network</span>
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        activity.network === 'Hyperliquid' || activity.blockchain === 'Hyperliquid' 
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' 
+                          : activity.network === 'HyperEVM' || activity.blockchain === 'HyperEVM'
+                          ? 'bg-blue-500/10 text-blue-400 border border-blue-500/30'
+                          : 'bg-gray-500/10 text-gray-400 border border-gray-500/30'
+                      }`}>
+                        {activity.network || activity.blockchain}
+                      </span>
+                    </div>
                     <div className="flex justify-between"><span className="text-sm text-gray-500">Amount</span><span className="text-sm font-mono text-white">{activity.amount.toLocaleString('en-US', { maximumFractionDigits: 6 })}</span></div>
                     {activity.price && <div className="flex justify-between"><span className="text-sm text-gray-500">Price</span><span className="text-sm font-mono text-gray-300">${activity.price.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span></div>}
                     <div className="flex justify-between"><span className="text-sm text-gray-500">Value</span><span className="text-sm font-medium text-white">${activity.value.toLocaleString('en-US', { maximumFractionDigits: 2 })}</span></div>
@@ -385,7 +416,6 @@ function ActivitySection() {
               )
             })}
           </div>
-
       </div>
 
       {!isLoading && filteredActivities.length > 0 && (
