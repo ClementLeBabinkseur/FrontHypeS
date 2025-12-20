@@ -35,3 +35,4 @@ wallets.json
 *.log
 .DS_Store
 .vscode/
+dashboard/backend/perf_test.py

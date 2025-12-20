@@ -19,6 +19,9 @@ const USERS_FILE = process.env.DATA_DIR
   : path.join(__dirname, 'users.json');
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this-in-production-please-make-it-random-and-long';
 
+// Import token mapping
+const { HYPERLIQUID_TOKENS, getTokenByIndex } = require('./hyperliquid-tokens.js');
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -46,77 +49,35 @@ const COINGECKO_IDS = {
 // Cache des métadonnées des assets Hyperliquid
 let assetMetaCache = {
   data: null,
-  lastUpdate: null,
-  TTL: 24 * 60 * 60 * 1000 // 24 heures
+  lastUpdate: null
 };
 
-// Récupérer les métadonnées des assets depuis Hyperliquid
+// Récupérer les métadonnées des assets (hardcoded uniquement)
 async function fetchAssetMeta() {
-  try {
-    const now = Date.now();
-    
-    // Utiliser le cache si valide
-    if (assetMetaCache.data && (now - assetMetaCache.lastUpdate) < assetMetaCache.TTL) {
-      return assetMetaCache.data;
-    }
-    
-    console.log('🔍 Fetching asset metadata from Hyperliquid...');
-    const response = await axios.post('https://api.hyperliquid.xyz/info', {
-      type: 'meta'
-    });
-    
-    if (response.data && response.data.universe) {
-      const mapping = {};
-      
-      // Créer le mapping index → nom
-      response.data.universe.forEach(asset => {
-        if (asset.name && typeof asset.name === 'string') {
-          // Pour les spots: index comme @107
-          mapping[`@${asset.name}`] = asset.name;
-          
-          // Pour les perps: nom direct (BTC, ETH, etc.)
-          mapping[asset.name] = asset.name;
-        }
-      });
-      
-      // Ajouter les tokens spot si disponibles
-      if (response.data.tokens) {
-        response.data.tokens.forEach((token, index) => {
-          if (token && token.name) {
-            mapping[`@${index}`] = token.name;
-          }
-        });
-      }
-      
-      assetMetaCache.data = mapping;
-      assetMetaCache.lastUpdate = now;
-      
-      console.log(`✅ Asset metadata loaded: ${Object.keys(mapping).length} assets`);
-      return mapping;
-    }
-    
-    return {};
-  } catch (error) {
-    console.error('❌ Error fetching asset metadata:', error.message);
-    
-    // Retourner le cache même expiré si disponible
-    if (assetMetaCache.data) {
-      console.log('⚠️  Using expired cache');
-      return assetMetaCache.data;
-    }
-    
-    // Sinon, utiliser le fallback hardcodé
-    return {
-      '@107': 'HYPE',
-      '@142': 'PURR',
-      '@151': 'JEFF',
-      '@230': 'HFUN',
-      '@254': 'JELLYJELLY',
-      'BTC': 'BTC',
-      'ETH': 'ETH',
-      'SOL': 'SOL'
-    };
+  // Si déjà chargé, retourner le cache
+  if (assetMetaCache.data) {
+    return assetMetaCache.data;
   }
+  
+  console.log('📚 Loading hardcoded token mapping...');
+  const mapping = {};
+  
+  // Créer le mapping @index → token depuis le fichier hardcodé
+  Object.entries(HYPERLIQUID_TOKENS).forEach(([index, token]) => {
+    mapping[`@${index}`] = token;
+  });
+  
+  // Ajouter les perps standards
+  mapping['BTC'] = 'BTC';
+  mapping['ETH'] = 'ETH';
+  mapping['SOL'] = 'SOL';
+  mapping['HYPE'] = 'HYPE';
+  
+  assetMetaCache.data = mapping;
+  assetMetaCache.lastUpdate = Date.now();
+  
+  console.log(`✅ Token mapping loaded: ${Object.keys(mapping).length} tokens`);
+  return mapping;
 }
 
 // Fonction pour convertir un coin index en nom de token
@@ -1500,9 +1461,9 @@ app.post('/api/bot/arbitrage', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Profit is required' });
     }
     
-    /*if (!pair) {
+    if (!pair) {
       return res.status(400).json({ error: 'Pair is required (e.g. HYPE/USDC)' });
-    }*/
+    }
     
     const data = await loadWallets();
     
@@ -1534,7 +1495,7 @@ app.post('/api/bot/arbitrage', authenticateToken, async (req, res) => {
       createdAt: new Date().toISOString(),
       // Métadonnées additionnelles pour analytics
       metadata: {
-        pair: pair || null,
+        pair,
         buyPrice: buyPrice ? parseFloat(buyPrice) : null,
         sellPrice: sellPrice ? parseFloat(sellPrice) : null,
         buyExchange,
