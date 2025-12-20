@@ -717,6 +717,18 @@ app.post('/api/wallets', authenticateToken, async (req, res) => {
 
     data.wallets.push(newWallet);
     await saveWallets(data);
+    
+    // 🔔 Notification Discord: Nouveau wallet ajouté
+    const walletTypeDisplay = walletType === 'vault' ? '🏦 Vault' : '⚙️ Executor';
+    const addressDisplay = walletType === 'vault' 
+      ? `HL: ${addresses.hyperliquid.slice(0, 8)}... / EVM: ${addresses.hyperevm.slice(0, 8)}...`
+      : `${address.slice(0, 8)}... (${blockchain})`;
+    
+    await sendDiscordNotification(
+      `➕ **New Wallet Added**\n${walletTypeDisplay}: ${nickname}\n${addressDisplay}`,
+      'info'
+    );
+    
     res.json(newWallet);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -793,6 +805,19 @@ app.get('/api/wallets/:address/balances', authenticateToken, async (req, res) =>
     const totalUSD = balances
       .filter(b => b.usdValue !== null)
       .reduce((sum, b) => sum + b.usdValue, 0);
+    
+    // 🔔 Alerte Discord: Executor avec balance < $10
+    if (totalUSD > 0 && totalUSD < 10) {
+      // Récupérer le wallet pour avoir le nickname
+      const data = await loadWallets();
+      const wallet = data.wallets.find(w => w.address === address);
+      const walletName = wallet?.nickname || address.slice(0, 8) + '...';
+      
+      await sendDiscordNotification(
+        `⚠️ **Low Balance Alert**\nExecutor **${walletName}** needs refill\nBalance: $${totalUSD.toFixed(2)} (${blockchain})`,
+        'warning'
+      );
+    }
 
     res.json({
       address,
@@ -1142,13 +1167,13 @@ app.get('/api/vault/pnl', authenticateToken, async (req, res) => {
         transactions: updatedData.vaultTransactions || []
       };
       
-      // 🔔 Envoyer notification Discord lors du refresh
-      try {
-        const embed = createVaultRefreshEmbed(responseData);
-        await sendDiscordNotification('Vault refreshed', 'info', embed);
-      } catch (error) {
-        console.error('Discord notification failed:', error.message);
-        // Continue même si Discord fail
+      // 🔔 Alerte Discord: HYPE critique (< 10)
+      const hypeAmount = breakdown['HYPE']?.amount || 0;
+      if (hypeAmount < 10 && hypeAmount > 0) {
+        await sendDiscordNotification(
+          `🚨 **CRITICAL: Low HYPE Balance**\nVault has only **${hypeAmount.toFixed(2)} HYPE**\nRefill needed for trading!`,
+          'error'
+        );
       }
       
       return res.json(responseData);
@@ -1660,6 +1685,59 @@ app.post('/api/bot/arbitrage', authenticateToken, async (req, res) => {
     
     console.log(`✅ Arbitrage logged: ${pair} → $${profit.toFixed(2)} profit`);
     
+    // 🔔 Notification Discord: Profit d'arbitrage >= $1
+    if (profit >= 1) {
+      const embed = {
+        color: profit >= 0 ? 3066993 : 15158332, // Vert si profit, rouge si perte
+        title: profit >= 0 ? '💰 Arbitrage Profit' : '📉 Arbitrage Loss',
+        fields: [
+          {
+            name: 'Pair',
+            value: pair,
+            inline: true
+          },
+          {
+            name: 'Profit',
+            value: `${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}`,
+            inline: true
+          }
+        ],
+        timestamp: new Date().toISOString()
+      };
+      
+      // Ajouter les prix si disponibles
+      if (buyPrice && sellPrice) {
+        embed.fields.push(
+          {
+            name: 'Buy',
+            value: `$${buyPrice}${buyExchange ? ` (${buyExchange})` : ''}`,
+            inline: true
+          },
+          {
+            name: 'Sell',
+            value: `$${sellPrice}${sellExchange ? ` (${sellExchange})` : ''}`,
+            inline: true
+          },
+          {
+            name: 'Spread',
+            value: `${(((sellPrice - buyPrice) / buyPrice) * 100).toFixed(2)}%`,
+            inline: true
+          }
+        );
+      }
+      
+      // Ajouter volume si disponible
+      if (volume) {
+        embed.fields.push({
+          name: 'Volume',
+          value: volume.toString(),
+          inline: true
+        });
+      }
+      
+      await sendDiscordNotification(null, 'success', embed);
+    }
+    
     res.json({ 
       success: true, 
       transaction,
@@ -1932,6 +2010,79 @@ async function calculateAndSavePnlSnapshot() {
 console.log('⏰ Starting PNL auto-tracking cron job (every 2 minutes)...');
 cron.schedule('*/2 * * * *', () => {
   calculateAndSavePnlSnapshot();
+});
+
+// Cron job pour rapport journalier (tous les jours à 00:00 UTC)
+console.log('⏰ Starting daily report cron job (00:00 UTC)...');
+cron.schedule('0 0 * * *', async () => {
+  try {
+    console.log('📊 Generating daily report...');
+    
+    const data = await loadWallets();
+    
+    // Récupérer les profits d'arbitrage des dernières 24h
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const profitTrades = (data.vaultTransactions || [])
+      .filter(t => t.type === 'profit' && new Date(t.date) >= yesterday);
+    
+    if (profitTrades.length === 0) {
+      console.log('📊 No trades in last 24h, skipping daily report');
+      return;
+    }
+    
+    const totalProfit = profitTrades.reduce((sum, t) => sum + t.amount, 0);
+    const winningTrades = profitTrades.filter(t => t.amount > 0).length;
+    const winRate = (winningTrades / profitTrades.length) * 100;
+    const avgProfit = totalProfit / profitTrades.length;
+    
+    // Créer l'embed du rapport
+    const embed = {
+      color: totalProfit >= 0 ? 3066993 : 15158332,
+      title: '📈 Daily Performance Report',
+      description: `Report for ${new Date(yesterday).toLocaleDateString()} - ${new Date().toLocaleDateString()}`,
+      fields: [
+        {
+          name: '💰 Total Profit',
+          value: `${totalProfit >= 0 ? '+' : ''}$${totalProfit.toFixed(2)}`,
+          inline: true
+        },
+        {
+          name: '📊 Trades',
+          value: profitTrades.length.toString(),
+          inline: true
+        },
+        {
+          name: '🎯 Win Rate',
+          value: `${winRate.toFixed(1)}%`,
+          inline: true
+        },
+        {
+          name: '📉 Avg/Trade',
+          value: `$${avgProfit.toFixed(2)}`,
+          inline: true
+        },
+        {
+          name: '✅ Wins',
+          value: winningTrades.toString(),
+          inline: true
+        },
+        {
+          name: '❌ Losses',
+          value: (profitTrades.length - winningTrades).toString(),
+          inline: true
+        }
+      ],
+      timestamp: new Date().toISOString(),
+      footer: {
+        text: 'HyperBot Daily Report'
+      }
+    };
+    
+    await sendDiscordNotification(null, 'info', embed);
+    console.log('✅ Daily report sent to Discord');
+  } catch (error) {
+    console.error('❌ Error generating daily report:', error.message);
+  }
 });
 
 // Calculer un snapshot immédiatement au démarrage
