@@ -1685,8 +1685,8 @@ app.post('/api/bot/arbitrage', authenticateToken, async (req, res) => {
     
     console.log(`✅ Arbitrage logged: ${pair} → $${profit.toFixed(2)} profit`);
     
-    // 🔔 Notification Discord: Profit d'arbitrage >= $1
-    if (profit >= 1) {
+    // 🔔 Notification Discord: Profit d'arbitrage >= $0.01
+    if (profit >= 0.01) {
       const embed = {
         color: profit >= 0 ? 3066993 : 15158332, // Vert si profit, rouge si perte
         title: profit >= 0 ? '💰 Arbitrage Profit' : '📉 Arbitrage Loss',
